@@ -29,8 +29,10 @@ func main() {
 		time.Sleep(5 * time.Second)
 		os.Exit(0)
 	}()
+	capi.EnableHighdpiSupport()
+
 	mainArgs := capi.NewCMainArgsT()
-	mainArgs.SetWinHandle()
+	cef.CMainArgsTSetInstance(mainArgs)
 
 	life_span_handler := capi.AllocCLifeSpanHandlerT().Bind(&myLifeSpanHandler{})
 
@@ -52,12 +54,14 @@ func main() {
 
 	s := capi.NewCSettingsT()
 	s.SetLogSeverity(capi.LogseverityWarning)
-	s.SetNoSandbox(0)
+	s.SetNoSandbox(1)
 	s.SetMultiThreadedMessageLoop(0)
 	s.SetRemoteDebuggingPort(8088)
 
 	cef.Initialize(mainArgs, s, app)
 	runtime.UnlockOSThread()
+
+	CreateRootWindow()
 
 	capi.RunMessageLoop()
 	defer capi.Shutdown()
@@ -84,27 +88,27 @@ type myBrowserProcessHandler struct {
 	initial_url *string
 }
 
-func (bph myBrowserProcessHandler) OnContextInitialized(sef *capi.CBrowserProcessHandlerT) {
-	// factory := capi.AllocCSchemeHandlerFactoryT().Bind(&viewerSchemeHandlerFacgtory)
-	// capi.RegisterSchemeHandlerFactory("http", internalHostname, factory)
+// func (bph myBrowserProcessHandler) OnContextInitialized(sef *capi.CBrowserProcessHandlerT) {
+// 	// factory := capi.AllocCSchemeHandlerFactoryT().Bind(&viewerSchemeHandlerFacgtory)
+// 	// capi.RegisterSchemeHandlerFactory("http", internalHostname, factory)
 
-	windowInfo := capi.NewCWindowInfoT()
-	windowInfo.SetStyle(capi.WinWsOverlappedwindow | capi.WinWsClipchildren |
-		capi.WinWsClipsiblings | capi.WinWsVisible)
-	windowInfo.SetParentWindow(nil)
-	windowInfo.SetX(capi.WinCwUseDefault)
-	windowInfo.SetY(capi.WinCwUseDefault)
-	windowInfo.SetWidth(capi.WinCwUseDefault)
-	windowInfo.SetHeight(capi.WinCwUseDefault)
-	windowInfo.SetWindowName("Vivliostyle Viewer")
+// 	windowInfo := capi.NewCWindowInfoT()
+// 	windowInfo.SetStyle(capi.WinWsOverlappedwindow | capi.WinWsClipchildren |
+// 		capi.WinWsClipsiblings | capi.WinWsVisible)
+// 	windowInfo.SetParentWindow(nil)
+// 	windowInfo.SetX(capi.WinCwUseDefault)
+// 	windowInfo.SetY(capi.WinCwUseDefault)
+// 	windowInfo.SetWidth(capi.WinCwUseDefault)
+// 	windowInfo.SetHeight(capi.WinCwUseDefault)
+// 	windowInfo.SetWindowName("Vivliostyle Viewer")
 
-	browserSettings := capi.NewCBrowserSettingsT()
+// 	browserSettings := capi.NewCBrowserSettingsT()
 
-	capi.BrowserHostCreateBrowser(windowInfo,
-		bph.GetCClientT(),
-		*bph.initial_url,
-		browserSettings, nil, nil)
-}
+// 	capi.BrowserHostCreateBrowser(windowInfo,
+// 		bph.GetCClientT(),
+// 		*bph.initial_url,
+// 		browserSettings, nil, nil)
+// }
 
 type myClient struct {
 }
