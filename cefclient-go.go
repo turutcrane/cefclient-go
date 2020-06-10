@@ -11,6 +11,10 @@ import (
 	"github.com/turutcrane/cefingo/cef"
 )
 
+var config struct {
+	initial_url *string
+}
+
 func init() {
 	// prefix := fmt.Sprintf("[%d] ", os.Getpid())
 	// capi.Logger = log.New(os.Stdout, prefix, log.LstdFlags)
@@ -34,22 +38,23 @@ func main() {
 	mainArgs := capi.NewCMainArgsT()
 	cef.CMainArgsTSetInstance(mainArgs)
 
-	life_span_handler := capi.AllocCLifeSpanHandlerT().Bind(&myLifeSpanHandler{})
-
 	browser_process_handler := myBrowserProcessHandler{}
 	capi.AllocCBrowserProcessHandlerT().Bind(&browser_process_handler)
 	defer browser_process_handler.SetCBrowserProcessHandlerT(nil)
 
-	client := capi.AllocCClientT().Bind(&myClient{})
-	client.AssocLifeSpanHandlerT(life_span_handler)
+	// client := &myClient{}
+	// capi.AllocCClientT().Bind(client)
+	// defer client.SetCClientT(nil)
+	// client.GetCClientT().AssocLifeSpanHandlerT(life_span_handler)
 
-	browser_process_handler.SetCClientT(client)
+	// browser_process_handler.SetCClientT(client.GetCClientT())
 
 	app := capi.AllocCAppT().Bind(&myApp{})
 	app.AssocBrowserProcessHandlerT(browser_process_handler.GetCBrowserProcessHandlerT())
 	cef.ExecuteProcess(mainArgs, app)
 
-	browser_process_handler.initial_url = flag.String("url", "https://www.golang.org/", "URL")
+	// browser_process_handler.initial_url = flag.String("url", "https://www.golang.org/", "URL")
+	config.initial_url = flag.String("url", "https://www.golang.org/", "URL")
 	flag.Parse() // should be after cef.ExecuteProcess() or implement CComandLine
 
 	s := capi.NewCSettingsT()
@@ -61,31 +66,32 @@ func main() {
 	cef.Initialize(mainArgs, s, app)
 	runtime.UnlockOSThread()
 
-	CreateRootWindow()
+	browserSettings := capi.NewCBrowserSettingsT()
+	CreateRootWindow(browserSettings)
 
 	capi.RunMessageLoop()
 	defer capi.Shutdown()
 }
 
-func init() {
-	var _ capi.OnBeforeCloseHandler = myLifeSpanHandler{}
-}
+// func init() {
+// 	var _ capi.OnBeforeCloseHandler = myLifeSpanHandler{}
+// }
 
-type myLifeSpanHandler struct {
-}
+// type myLifeSpanHandler struct {
+// }
 
-func (myLifeSpanHandler) OnBeforeClose(self *capi.CLifeSpanHandlerT, brwoser *capi.CBrowserT) {
-	capi.Logf("L89:")
-	capi.QuitMessageLoop()
-}
+// func (myLifeSpanHandler) OnBeforeClose(self *capi.CLifeSpanHandlerT, brwoser *capi.CBrowserT) {
+// 	capi.Logf("L89:")
+// 	capi.QuitMessageLoop()
+// }
 
 type myBrowserProcessHandler struct {
 	// this reference forms an UNgabagecollectable circular reference
 	// To GC, call myBrowserProcessHandler.SetCBrowserProcessHandlerT(nil)
 	capi.RefToCBrowserProcessHandlerT
 
-	capi.RefToCClientT
-	initial_url *string
+	// capi.RefToCClientT
+	// initial_url *string
 }
 
 // func (bph myBrowserProcessHandler) OnContextInitialized(sef *capi.CBrowserProcessHandlerT) {
@@ -110,8 +116,10 @@ type myBrowserProcessHandler struct {
 // 		browserSettings, nil, nil)
 // }
 
-type myClient struct {
-}
+// type myClient struct {
+// 	capi.RefToCClientT
+// 	initial_url *string
+// }
 
 type myApp struct {
 }

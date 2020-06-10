@@ -1,21 +1,22 @@
 package main
 
 import (
-	"math"
 	"log"
+	"math"
 	"syscall"
 	"unsafe"
 
 	// "github.com/JamesHovious/w32"
 	"github.com/turutcrane/cefingo/capi"
 	"github.com/turutcrane/win32api"
+	"github.com/turutcrane/win32api/win32const"
 )
 
 // #cgo pkg-config: cefingo
 // #include "tests/cefclient/browser/resource.h"
 import "C"
 
-var rootWins = []*RootWindowWin{nil}
+type WndProc func(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPARAM, lParam win32api.LPARAM) win32api.LRESULT
 
 const (
 	MAX_URL_LENGTH = 255
@@ -24,8 +25,8 @@ const (
 )
 
 func CreateRootWindow(
-// settings *capi.CBrowserSettingsT,
-// initially_hidden bool,
+	settings *capi.CBrowserSettingsT,
+	// initially_hidden bool,
 ) {
 	hInstance, err := win32api.GetModuleHandle(nil)
 	if err != nil {
@@ -43,29 +44,29 @@ func CreateRootWindow(
 	RegisterRootClass(win32api.HINSTANCE(syscall.Handle(hInstance)), window_class, background_brush)
 
 	dwExStyle := 0
-	x := win32api.CwUsedefault
-	y := win32api.CwUsedefault
-	width := win32api.CwUsedefault
-	height := win32api.CwUsedefault
-	rootWindow := RootWindowWin{}
-	rootWins = append(rootWins, &rootWindow)
-	up := win32api.LPVOID(len(rootWins) - 1)
+	x := win32const.CwUsedefault
+	y := win32const.CwUsedefault
+	width := win32const.CwUsedefault
+	height := win32const.CwUsedefault
+
+	up, rootWindow := NewRootWindowWin(settings)
 
 	wnd, err := win32api.CreateWindowEx(win32api.DWORD(dwExStyle),
 		syscall.StringToUTF16Ptr(window_class),
 		syscall.StringToUTF16Ptr(window_title),
-		win32api.WsOverlappedwindow|win32api.WsClipchildren, //dwStyle
+		win32const.WsOverlappedwindow|win32const.WsClipchildren, //dwStyle
 		x, y,
 		width, height,
 		0, // HWND
 		0, // HMENU
 		win32api.HINSTANCE(hInstance),
-		up,
+		win32api.LPVOID(up),
 	)
 	if wnd == 0 || err != nil {
 		log.Panicln("T52: Failed to CreateWindowsEx", wnd, err)
 	}
-	win32api.ShowWindow(rootWindow.hwnd_, win32api.SwShownormal)
+
+	win32api.ShowWindow(rootWindow.hwnd_, win32const.SwShownormal)
 	if !win32api.UpdateWindow(rootWindow.hwnd_) {
 		log.Panicln("T63: ShowWindow")
 	}
@@ -114,13 +115,13 @@ func RegisterRootClass(hInstance win32api.HINSTANCE, window_class string, backgr
 	if err != nil {
 		log.Panicln("T109: LoadIcon Sm", err)
 	}
-	cursor, err := win32api.LoadCursor(0, win32api.IdcArrow)
+	cursor, err := win32api.LoadCursor(0, win32const.IdcArrow)
 	if err != nil {
 		log.Panicln("T113: LoadCursor", err)
 	}
 	wndClass := win32api.Wndclassex{
 		Size:       uint32(unsafe.Sizeof(win32api.Wndclassex{})),
-		Style:      win32api.CsHredraw | win32api.CsVredraw,
+		Style:      win32const.CsHredraw | win32const.CsVredraw,
 		WndProc:    syscall.NewCallback(RootWndProc),
 		ClsExtra:   0,
 		WndExtra:   0,
@@ -137,69 +138,6 @@ func RegisterRootClass(hInstance win32api.HINSTANCE, window_class string, backgr
 	}
 }
 
-type RootWindowWin struct {
-	hwnd_                                 win32api.HWND
-	back_hwnd_                            win32api.HWND
-	find_message_id_                      win32api.UINT
-	called_enable_non_client_dpi_scaling_ bool
-}
-
-func RootWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPARAM, lParam win32api.LPARAM) win32api.LRESULT {
-	var self *RootWindowWin
-	if message != win32api.WmNccreate {
-		win32api.SetLastError(0)
-		up, err := win32api.GetWindowLongPtr(hWnd, win32api.GwlpUserdata)
-		if up == 0 {
-			if err != nil {
-				log.Println("T159: GetWindowLongPtr GwlpUserdata", hWnd, err)
-			}
-			return win32api.DefWindowProc(hWnd, message, wParam, lParam)
-		}
-		self = rootWins[up]
-		if self.hwnd_ != hWnd {
-			log.Panicln("T93: hwnd missmatch!", self.hwnd_, hWnd)
-		}
-	}
-	if self != nil && message == self.find_message_id_ {
-		// lpfr := w32.LPFINDREPLACE(lParam)
-		// self->OnFindEvent()
-		log.Panicln("T102: not impremented")
-		return 0
-	}
-
-	switch message {
-	case win32api.WmNccreate:
-		cs := (*win32api.Createstruct)(unsafe.Pointer(lParam))
-		self := rootWins[cs.CreateParams]
-		if self == nil {
-			log.Panicln("T111: self not set")
-		}
-
-		r, err := win32api.SetWindowLongPtr(hWnd, win32api.GwlpUserdata, uintptr(cs.CreateParams))
-		if err != nil {
-			log.Panicln("T186: SetWindowLongPtr", r, hWnd, err)
-		}
-		self.hwnd_ = hWnd
-		self.OnNCCreate(cs)
-
-	case win32api.WmCreate:
-		cs := (*win32api.Createstruct)(unsafe.Pointer(lParam))
-		self.OnCreate(cs)
-	}
-
-	return win32api.DefWindowProc(hWnd, message, wParam, lParam)
-}
-
-func (self *RootWindowWin) OnNCCreate(cs *win32api.Createstruct) {
-	if IsProcessPerMonitorDpiAware() {
-		enable_non_client_dpi_scaling, err := win32api.EnableNonClientDpiScaling(self.hwnd_)
-		if err != nil {
-			log.Panicln("T191:", err)
-		}
-		self.called_enable_non_client_dpi_scaling_ = enable_non_client_dpi_scaling
-	}
-}
-
 var processPerMonitorDpiAware *bool
 
 func IsProcessPerMonitorDpiAware() bool {
@@ -209,45 +147,11 @@ func IsProcessPerMonitorDpiAware() bool {
 		processPerMonitorDpiAware = &aBool
 
 		hresult := win32api.GetProcessDpiAwareness(0, &dpiAwareness)
-		if hresult == win32api.SOk {
+		if hresult == win32const.SOk {
 			*processPerMonitorDpiAware = true
 		}
 	}
 	return *processPerMonitorDpiAware
-}
-
-func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
-	hInstance := cs.Instance
-
-	var rect win32api.RECT
-	if win32api.GetClientRect(self.hwnd_, &rect) {
-		log.Panicln("T221: GetClientRect")
-	}
-	log.Printf("T155: OnCreate")
-
-	// if (with_controls_) skip
-	x_offset := 0
-	button_width := GetButtonWidth(self.hwnd_)
-	urlbar_height := GetURLBarHeight(self.hwnd_)
-	// with_controles_
-	h, err := win32api.CreateWindowEx(
-		win32api.DWORD(0),
-		syscall.StringToUTF16Ptr("BACK"),
-		syscall.StringToUTF16Ptr("Back"),
-		win32api.WsChild|win32api.WsVisible|win32api.BsPushbutton|win32api.WsDisabled,
-		x_offset, 0,
-		button_width, urlbar_height,
-		self.hwnd_,
-		win32api.HMENU(C.IDC_NAV_BACK),
-		hInstance,
-		0,
-	)
-	if err != nil {
-		log.Panicln("T242: Create Button", err)
-	}
-	self.back_hwnd_ = h
-	x_offset += button_width
-
 }
 
 func GetButtonWidth(hwnd win32api.HWND) int {
@@ -284,11 +188,20 @@ func GetDeviceScaleFactor() float32 {
 		// must logout to change the DPI setting. This value also applies to all
 		// screens.
 		screen_dc := win32api.GetDC(0)
-		dpi_x := win32api.GetDeviceCaps(screen_dc, win32api.Logpixelsx)
+		dpi_x := win32api.GetDeviceCaps(screen_dc, win32const.Logpixelsx)
 		scale_factor = float32(dpi_x) / DPI_1X
 		win32api.ReleaseDC(0, screen_dc)
 		initialized = true
 	}
 
 	return scale_factor
+}
+
+func SetWndProc(hWnd win32api.HWND, wndProc WndProc) win32api.WNDPROC {
+	proc := syscall.NewCallback(wndProc)
+	v, err := win32api.SetWindowLongPtr(hWnd, win32const.GwlpWndproc, proc)
+	if err != nil {
+		log.Panicln("T383:", err)
+	}
+	return win32api.WNDPROC(v)
 }
