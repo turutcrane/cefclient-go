@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"math"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -16,61 +17,102 @@ import (
 // #include "tests/cefclient/browser/resource.h"
 import "C"
 
-type WndProc func(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPARAM, lParam win32api.LPARAM) win32api.LRESULT
+type WindowManager struct {
+	sync.Map // hwnd -> *RootWindowWin
+	sync.Mutex
+
+	rootWins []*RootWindowWin
+}
+
+// var rootWins = []*RootWindowWin{nil} // index 0 is not usable.
+
+var windowManager = &WindowManager{}
+
+func (wm *WindowManager) NewRootWindowWin(
+	is_popup bool,
+	settings *capi.CBrowserSettingsT,
+) (key int, rootWindow *RootWindowWin, browserWindow *BrowserWindow) {
+	rootWindow = &RootWindowWin{}
+	rootWindow.draggable_region_ = win32api.CreateRectRgn(0, 0, 0, 0)
+	rootWindow.with_controls_ = true
+	rootWindow.is_popup_ = is_popup
+
+	wm.Lock()
+	defer wm.Unlock()
+	if len(wm.rootWins) == 0 {
+		wm.rootWins = append(wm.rootWins, nil)
+	}
+	wm.rootWins = append(wm.rootWins, rootWindow)
+	key = len(wm.rootWins) - 1
+
+	rootWindow.browser_settings_ = settings
+	rootWindow.browser_window_ = NewBrowserWindow(rootWindow)
+
+	return key, rootWindow, rootWindow.browser_window_
+}
+
+func (wm *WindowManager) CreateRootWindow(
+	is_popup bool,
+	browserSettings *capi.CBrowserSettingsT,
+) {
+	up, rootWindow, _ := windowManager.NewRootWindowWin(is_popup, browserSettings)
+	if !is_popup {
+		rootWindow.CreateWindow(up, browserSettings,
+			0,
+			win32const.WsOverlappedwindow|win32const.WsClipchildren,
+			win32const.CwUsedefault, win32const.CwUsedefault, win32const.CwUsedefault, win32const.CwUsedefault,
+		)
+	}
+}
+
+func (wm *WindowManager) Lookup(key int) (rootWindow *RootWindowWin) {
+	wm.Lock()
+	defer wm.Unlock()
+	return wm.rootWins[key]
+}
+func (wm *WindowManager) SetRootWin(hwnd win32api.HWND, rootWin *RootWindowWin) {
+	wm.Store(hwnd, rootWin)
+}
+
+func (wm *WindowManager) GetRootWin(hwnd win32api.HWND) (rootWin *RootWindowWin, exist bool) {
+	if r, ok := wm.Load(hwnd); ok {
+		rootWin = r.(*RootWindowWin)
+		exist = ok
+	}
+	return rootWin, exist
+}
+
+func (wm *WindowManager) RemoveRootWin(hwnd win32api.HWND) {
+	wm.Delete(hwnd)
+}
+
+func (wm *WindowManager) Empty() bool {
+	var mapEmpty = true
+	wm.Range(func(key, value interface{}) bool {
+		mapEmpty = false
+		return false
+	})
+	return mapEmpty
+}
+
+func OnRootWindowDestroyed(root_window *RootWindowWin) {
+	// log.Println("T118:", "OnBeforeClose: QuitMessageLoop")
+
+	if root_window.edit_hwnd_ != 0 {
+		windowManager.RemoveRootWin(root_window.edit_hwnd_)
+	}
+	windowManager.RemoveRootWin(root_window.hwnd_)
+
+	if windowManager.Empty() {
+		capi.QuitMessageLoop()
+	}
+}
 
 const (
 	MAX_URL_LENGTH = 255
 	BUTTON_WIDTH   = 72
 	URLBAR_HEIGHT  = 24
 )
-
-func CreateRootWindow(
-	settings *capi.CBrowserSettingsT,
-	// initially_hidden bool,
-) {
-	hInstance, err := win32api.GetModuleHandle(nil)
-	if err != nil {
-		log.Panicln("T31:", err)
-	}
-	window_title := "cefclient"
-	window_class := "CEFCLIENT"
-
-	background_color := CefColorSetARGB(255, 255, 255, 255)
-	background_brush := win32api.CreateSolidBrush(
-		RGB(CefColorGetR(background_color),
-			CefColorGetG(background_color),
-			CefColorGetB(background_color)),
-	)
-	RegisterRootClass(win32api.HINSTANCE(syscall.Handle(hInstance)), window_class, background_brush)
-
-	dwExStyle := 0
-	x := win32const.CwUsedefault
-	y := win32const.CwUsedefault
-	width := win32const.CwUsedefault
-	height := win32const.CwUsedefault
-
-	up, rootWindow := NewRootWindowWin(settings)
-
-	wnd, err := win32api.CreateWindowEx(win32api.DWORD(dwExStyle),
-		syscall.StringToUTF16Ptr(window_class),
-		syscall.StringToUTF16Ptr(window_title),
-		win32const.WsOverlappedwindow|win32const.WsClipchildren, //dwStyle
-		x, y,
-		width, height,
-		0, // HWND
-		0, // HMENU
-		win32api.HINSTANCE(hInstance),
-		win32api.LPVOID(up),
-	)
-	if wnd == 0 || err != nil {
-		log.Panicln("T52: Failed to CreateWindowsEx", wnd, err)
-	}
-
-	win32api.ShowWindow(rootWindow.hwnd_, win32const.SwShownormal)
-	if !win32api.UpdateWindow(rootWindow.hwnd_) {
-		log.Panicln("T63: ShowWindow")
-	}
-}
 
 func RGB(r, g, b uint32) win32api.COLORREF {
 	return win32api.COLORREF(r | g<<8 | b<<16)
@@ -122,7 +164,7 @@ func RegisterRootClass(hInstance win32api.HINSTANCE, window_class string, backgr
 	wndClass := win32api.Wndclassex{
 		Size:       uint32(unsafe.Sizeof(win32api.Wndclassex{})),
 		Style:      win32const.CsHredraw | win32const.CsVredraw,
-		WndProc:    syscall.NewCallback(RootWndProc),
+		WndProc:    win32api.WNDPROC(syscall.NewCallback(RootWndProc)),
 		ClsExtra:   0,
 		WndExtra:   0,
 		Instance:   hInstance,
@@ -197,7 +239,7 @@ func GetDeviceScaleFactor() float32 {
 	return scale_factor
 }
 
-func SetWndProc(hWnd win32api.HWND, wndProc WndProc) win32api.WNDPROC {
+func SetWndProc(hWnd win32api.HWND, wndProc win32api.WndProc) win32api.WNDPROC {
 	proc := syscall.NewCallback(wndProc)
 	v, err := win32api.SetWindowLongPtr(hWnd, win32const.GwlpWndproc, proc)
 	if err != nil {

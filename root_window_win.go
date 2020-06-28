@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"sync"
 	"syscall"
 	"unicode/utf16"
 	"unsafe"
@@ -15,38 +14,13 @@ import (
 // #include "tests/cefclient/browser/resource.h"
 import "C"
 
-var rootWins = []*RootWindowWin{nil} // index 0 is not usable.
-var rootWinMap sync.Map              // hwnd -> *RootWindowWin
-
-func NewRootWindowWin(settings *capi.CBrowserSettingsT) (key int, rootWindow *RootWindowWin) {
-	rootWindow = &RootWindowWin{}
-	rootWindow.with_controls_ = true
-	rootWins = append(rootWins, rootWindow)
-	up := len(rootWins) - 1
-	rootWindow.browser_settings_ = settings
-
-	rootWindow.browser_window_ = NewBrowserWindow(rootWindow)
-	return up, rootWindow
-}
-
-func SetRootWin(hwnd win32api.HWND, rootWin *RootWindowWin) {
-	rootWinMap.Store(hwnd, rootWin)
-}
-
-func GetRootWin(hwnd win32api.HWND) (rootWin *RootWindowWin, exist bool) {
-	if r, ok := rootWinMap.Load(hwnd); ok {
-		rootWin = r.(*RootWindowWin)
-		exist = ok
-	}
-
-	return rootWin, exist
-}
-
 type RootWindowWin struct {
 	with_controls_                        bool
+	is_popup_                             bool
 	browser_settings_                     *capi.CBrowserSettingsT
 	browser_window_                       *BrowserWindow
 	hwnd_                                 win32api.HWND
+	draggable_region_                     win32api.HRGN
 	font_                                 win32api.HFONT
 	font_height_                          int
 	back_hwnd_                            win32api.HWND
@@ -57,13 +31,60 @@ type RootWindowWin struct {
 	find_message_id_                      win32api.UINT
 	edit_wndproc_old_                     win32api.WNDPROC
 	called_enable_non_client_dpi_scaling_ bool
+
+	window_destroyed_  bool
+	browser_destroyed_ bool
+}
+
+func (rw *RootWindowWin) CreateWindow(
+	key int,
+	settings *capi.CBrowserSettingsT,
+	// initially_hidden bool,
+	dwExStyle int,
+	dwStyle int,
+	x, y, width, height int,
+) {
+	hInstance, err := win32api.GetModuleHandle(nil)
+	if err != nil {
+		log.Panicln("T31:", err)
+	}
+	window_title := "cefclient"
+	window_class := "CEFCLIENT"
+
+	background_color := CefColorSetARGB(255, 255, 255, 255)
+	background_brush := win32api.CreateSolidBrush(
+		RGB(CefColorGetR(background_color),
+			CefColorGetG(background_color),
+			CefColorGetB(background_color)),
+	)
+	RegisterRootClass(win32api.HINSTANCE(syscall.Handle(hInstance)), window_class, background_brush)
+
+	wnd, err := win32api.CreateWindowEx(win32api.DWORD(dwExStyle),
+		syscall.StringToUTF16Ptr(window_class),
+		syscall.StringToUTF16Ptr(window_title),
+		win32api.DWORD(dwStyle),
+		x, y,
+		width, height,
+		0, // HWND
+		0, // HMENU
+		win32api.HINSTANCE(hInstance),
+		win32api.LPVOID(key),
+	)
+	if wnd == 0 || err != nil || wnd != rw.hwnd_ {
+		log.Panicln("T52: Failed to CreateWindowsEx", wnd, err, rw.hwnd_)
+	}
+
+	win32api.ShowWindow(rw.hwnd_, win32const.SwShownormal)
+	if !win32api.UpdateWindow(rw.hwnd_) {
+		log.Panicln("T63: ShowWindow")
+	}
 }
 
 func RootWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPARAM, lParam win32api.LPARAM) win32api.LRESULT {
 	var self *RootWindowWin
 	if message != win32const.WmNccreate {
 		var ok bool
-		self, ok = GetRootWin(hWnd)
+		self, ok = windowManager.GetRootWin(hWnd)
 		if !ok {
 			log.Println("T159: GetWindowLongPtr GwlpUserdata", hWnd)
 			return win32api.DefWindowProc(hWnd, message, wParam, lParam)
@@ -80,6 +101,18 @@ func RootWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPAR
 	}
 
 	switch message {
+	case win32const.WmGetobject:
+		// Only the lower 32 bits of lParam are valid when checking the object id
+		// because it sometimes gets sign-extended incorrectly (but not always).
+		obj_id := win32api.DWORD(lParam)
+
+		// Accessibility readers will send an OBJID_CLIENT message.
+		if win32api.DWORD(0xffffffff&win32const.ObjidClient) == obj_id {
+			if self.GetBrowser() != nil && self.GetBrowser().GetHost() != nil {
+				self.GetBrowser().GetHost().SetAccessibilityState(capi.StateEnabled)
+			}
+		}
+
 	case win32const.WmPaint:
 		self.OnPaint()
 		return 0
@@ -95,14 +128,59 @@ func RootWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPAR
 	case win32const.WmSize:
 		self.OnSize(wParam == win32const.SizeMinimized)
 
+	case win32const.WmMoving, win32const.WmMove:
+		self.OnMove()
+		return 0
+
+	case win32const.WmDpichanged:
+		self.OnDpiChanged(wParam, lParam)
+
+	case win32const.WmErasebkgnd:
+		if !self.OnEraseBkgnd() {
+			return 0 // Don't erase the background.
+		}
+
+	case win32const.WmEntermenuloop:
+		if wParam == 0 {
+			// Entering the menu loop for the application menu.
+			capi.SetOsmodalLoop(true)
+		}
+
+	case win32const.WmExitmenuloop:
+		if wParam == 0 {
+			// Exiting the menu loop for the application menu.
+			capi.SetOsmodalLoop(false)
+		}
+
+	case win32const.WmClose:
+		if self.OnClose() {
+			return 0
+		}
+
+	case win32const.WmNchittest:
+		hit := win32api.DefWindowProc(hWnd, message, wParam, lParam)
+		if hit == win32const.Htclient {
+			points := win32api.Makepoints(lParam)
+			point := win32api.Point{X: win32api.LONG(points.X), Y: win32api.LONG(points.Y)}
+			win32api.ScreenToClient(hWnd, &point)
+			if win32api.PtInRegion(self.draggable_region_, int(point.X), int(point.Y)) {
+				// If cursor is inside a draggable region return HTCAPTION to allow
+				// dragging.
+				return win32const.Htcaption
+			}
+		}
+		return hit
+
 	case win32const.WmNccreate:
 		cs := win32api.ToPCreatestruct(lParam)
-		self := rootWins[cs.CreateParams]
+		self := windowManager.Lookup(int(cs.CreateParams))
 		if self == nil {
 			log.Panicln("T111: self not set")
 		}
 
-		SetRootWin(hWnd, self)
+		// Associate |self| with the main window.
+		// SetUserDataPtr(hWnd, self);
+		windowManager.SetRootWin(hWnd, self)
 
 		self.hwnd_ = hWnd
 		self.OnNCCreate(cs)
@@ -110,6 +188,12 @@ func RootWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPAR
 	case win32const.WmCreate:
 		cs := win32api.ToPCreatestruct(lParam)
 		self.OnCreate(cs)
+
+	case win32const.WmNcdestroy:
+		// win32api.SetUserDataPtr(wWnd, nil)
+		windowManager.RemoveRootWin(hWnd)
+		self.hwnd_ = 0
+		self.OnDestroyed()
 	}
 
 	return win32api.DefWindowProc(hWnd, message, wParam, lParam)
@@ -217,7 +301,7 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 
 		// // Associate |this| with the edit window.
 		// SetUserDataPtr(edit_hwnd_, this)
-		SetRootWin(edit_hwnd_, self)
+		windowManager.SetRootWin(edit_hwnd_, self)
 
 		rect.Top += win32api.LONG(urlbar_height)
 	} else {
@@ -363,6 +447,78 @@ func (self *RootWindowWin) OnSize(minimized bool) {
 	}
 }
 
+func (self *RootWindowWin) OnMove() {
+	browser := self.GetBrowser()
+	if browser != nil {
+		browser.GetHost().NotifyMoveOrResizeStarted()
+	}
+}
+
+func (self *RootWindowWin) OnDpiChanged(wParam win32api.WPARAM, lParam win32api.LPARAM) {
+	if win32api.LOWORD(wParam) != win32api.HIWORD(wParam) {
+		log.Println("Not Implemented: Received non-square scaling factors")
+		return
+	}
+
+	// if self.browser_window_ != 0 && with_osr_ {
+	//	Scale factor for the new display.
+	//	const float display_scale_factor =
+	//	static_cast<float>(LOWORD(wParam)) / DPI_1X;
+	//	browser_window_->SetDeviceScaleFactor(display_scale_factor);
+	// }
+
+	rect := win32api.LParamToPRect(lParam)
+	self.SetBounds(int(rect.Left), int(rect.Top),
+		uint32(rect.Right-rect.Left), uint32(rect.Bottom-rect.Top),
+	)
+}
+
+func (self *RootWindowWin) OnEraseBkgnd() bool {
+	// Erase the background when the browser does not exist.
+	return (self.GetBrowser() == nil)
+}
+
+func (self *RootWindowWin) OnClose() bool {
+	if self.browser_window_ != nil && !self.browser_window_.IsClosing() {
+		browser := self.GetBrowser()
+		if browser != nil {
+			browser.GetHost().CloseBrowser(false)
+			return true
+		}
+	}
+	return false
+}
+
+func (self *RootWindowWin) OnBrowserWindowClosing() {
+	// Nothing to do
+}
+
+func (self *RootWindowWin) OnBrowserWindowDestroyed() {
+	self.browser_window_ = nil
+	if !self.window_destroyed_ {
+		self.Close(true)
+	}
+	self.browser_destroyed_ = true
+	self.NotifyDestroyedIfDone()
+}
+
+func (self *RootWindowWin) OnDestroyed() {
+	self.window_destroyed_ = true
+	self.NotifyDestroyedIfDone()
+}
+
+func (self *RootWindowWin) NotifyDestroyedIfDone() {
+	if self.window_destroyed_ && self.browser_destroyed_ {
+		OnRootWindowDestroyed(self)
+	}
+}
+
+func (self *RootWindowWin) SetBounds(x, y int, width, height uint32) {
+	if self.hwnd_ != 0 {
+		win32api.SetWindowPos(self.hwnd_, 0, x, y, int(width), int(height), win32const.SwpNozorder)
+	}
+}
+
 func (self *RootWindowWin) GetBrowser() *capi.CBrowserT {
 	return self.browser_window_.browser_
 }
@@ -370,7 +526,7 @@ func (self *RootWindowWin) GetBrowser() *capi.CBrowserT {
 const MaxUrlLength = 255
 
 func EditWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPARAM, lParam win32api.LPARAM) win32api.LRESULT {
-	self, ok := GetRootWin(hWnd)
+	self, ok := windowManager.GetRootWin(hWnd)
 	if !ok {
 		log.Panicln("T386:", hWnd)
 	}
@@ -399,4 +555,18 @@ func EditWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPAR
 	}
 
 	return win32api.CallWindowProc(self.edit_wndproc_old_, hWnd, message, wParam, lParam)
+}
+
+func (self *RootWindowWin) Close(force bool) {
+	if self.hwnd_ != 0 {
+		if force {
+			win32api.DestroyWindow(self.hwnd_)
+		} else {
+			win32api.PostMessage(self.hwnd_, win32const.WmClose, 0, 0)
+		}
+	}
+}
+
+func (self *RootWindowWin) OnBrowserCreated(browser *capi.CBrowserT) {
+	self.OnSize(false)
 }

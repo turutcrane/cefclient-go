@@ -67,7 +67,7 @@ func main() {
 	runtime.UnlockOSThread()
 
 	browserSettings := capi.NewCBrowserSettingsT()
-	CreateRootWindow(browserSettings)
+	windowManager.CreateRootWindow(false, browserSettings)
 
 	capi.RunMessageLoop()
 	defer capi.Shutdown()

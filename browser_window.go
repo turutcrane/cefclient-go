@@ -10,8 +10,9 @@ import (
 )
 
 type BrowserWindow struct {
-	rootWin_ *RootWindowWin
-	browser_ *capi.CBrowserT
+	rootWin_    *RootWindowWin
+	browser_    *capi.CBrowserT
+	is_closing_ bool
 	capi.RefToCClientT
 }
 
@@ -55,11 +56,14 @@ func (bw *BrowserWindow) OnLoadingStateChange(
 func init() {
 	var _ capi.OnBeforeCloseHandler = &BrowserWindow{}
 	var _ capi.OnAfterCreatedHandler = &BrowserWindow{}
+	var _ capi.DoCloseHandler = &BrowserWindow{}
 }
 
-func (bw *BrowserWindow) OnBeforeClose(self *capi.CLifeSpanHandlerT, brwoser *capi.CBrowserT) {
-	log.Println("T188:", "OnBeforeClose: QuitMessageLoop")
-	capi.QuitMessageLoop()
+func (bw *BrowserWindow) OnBeforeClose(self *capi.CLifeSpanHandlerT, browser *capi.CBrowserT) {
+	// capi.QuitMessageLoop()
+
+	bw.OnBrowserClosed(browser)
+
 }
 
 func (bw *BrowserWindow) OnAfterCreated(
@@ -72,7 +76,29 @@ func (bw *BrowserWindow) OnAfterCreated(
 	} else {
 		log.Println("T71:", "OnAfterCreated")
 	}
+	bw.rootWin_.OnBrowserCreated(browser)
 }
+
+func (bw *BrowserWindow) DoClose(
+	self *capi.CLifeSpanHandlerT,
+	browser *capi.CBrowserT,
+) bool {
+	log.Println("T83: DoClose")
+	bw.OnBrowserClosing(browser)
+
+	return false
+}
+
+func (bw *BrowserWindow) OnBrowserClosing(browser *capi.CBrowserT) {
+	bw.is_closing_ = true
+
+	bw.rootWin_.OnBrowserWindowClosing()
+}
+
+func (bw *BrowserWindow) OnBrowserClosed(browser *capi.CBrowserT) {
+	bw.rootWin_.OnBrowserWindowDestroyed()
+}
+
 
 func (bw *BrowserWindow) CreateBrowser(
 	parentHandle capi.CWindowHandleT,
@@ -134,4 +160,8 @@ func (bw *BrowserWindow) SetBound(x, y int, width, height uint32) {
 	if hwnd != 0 {
 		win32api.SetWindowPos(hwnd, 0, x, y, int(width), int(height), win32const.SwpNozorder)
 	}
+}
+
+func (bw *BrowserWindow) IsClosing() bool {
+	return bw.is_closing_
 }
