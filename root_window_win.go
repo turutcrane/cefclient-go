@@ -16,7 +16,10 @@ import "C"
 
 type RootWindowWin struct {
 	with_controls_                        bool
+	always_on_top_                        bool
+	no_activate_                          bool
 	is_popup_                             bool
+	start_rect_                           win32api.Rect
 	browser_settings_                     *capi.CBrowserSettingsT
 	browser_window_                       *BrowserWindow
 	hwnd_                                 win32api.HWND
@@ -36,13 +39,30 @@ type RootWindowWin struct {
 	browser_destroyed_ bool
 }
 
+func (rw *RootWindowWin) Init(
+	is_popup bool,
+	with_controls bool,
+	rect win32api.Rect,
+	always_on_top bool,
+	no_activate bool,
+	settings *capi.CBrowserSettingsT,
+) *BrowserWindow {
+	rw.start_rect_ = rect
+	rw.always_on_top_ = always_on_top
+	rw.no_activate_ = no_activate
+
+	rw.draggable_region_ = win32api.CreateRectRgn(0, 0, 0, 0)
+	rw.with_controls_ = with_controls
+	rw.is_popup_ = is_popup
+	rw.browser_settings_ = settings
+	rw.browser_window_ = NewBrowserWindow(rw)
+
+	return rw.browser_window_
+}
+
 func (rw *RootWindowWin) CreateWindow(
 	key int,
-	settings *capi.CBrowserSettingsT,
 	// initially_hidden bool,
-	dwExStyle int,
-	dwStyle int,
-	x, y, width, height int,
 ) {
 	hInstance, err := win32api.GetModuleHandle(nil)
 	if err != nil {
@@ -59,10 +79,32 @@ func (rw *RootWindowWin) CreateWindow(
 	)
 	RegisterRootClass(win32api.HINSTANCE(syscall.Handle(hInstance)), window_class, background_brush)
 
-	wnd, err := win32api.CreateWindowEx(win32api.DWORD(dwExStyle),
+	dwStyle := win32api.DWORD(win32const.WsOverlappedwindow | win32const.WsClipchildren)
+
+	dwExStyle := win32api.DWORD(0)
+	if rw.always_on_top_ {
+		dwExStyle |= win32const.WsExTopmost
+	}
+	if rw.no_activate_ {
+		dwExStyle |= win32const.WsExNoactivate
+	}
+
+	var x, y, width, height int
+	if win32api.IsRectEmpty(&rw.start_rect_) {
+		x = win32const.CwUsedefault
+		y = win32const.CwUsedefault
+		width = win32const.CwUsedefault
+		height = win32const.CwUsedefault
+	} else {
+		if _, err := win32api.AdjustWindowRectEx(&rw.start_rect_, dwStyle, true, dwExStyle); err != nil {
+			log.Panicln("T85:", err)
+		}
+	}
+
+	wnd, err := win32api.CreateWindowEx(dwExStyle,
 		syscall.StringToUTF16Ptr(window_class),
 		syscall.StringToUTF16Ptr(window_title),
-		win32api.DWORD(dwStyle),
+		dwStyle,
 		x, y,
 		width, height,
 		0, // HWND
@@ -86,7 +128,6 @@ func RootWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPAR
 		var ok bool
 		self, ok = windowManager.GetRootWin(hWnd)
 		if !ok {
-			log.Println("T159: GetWindowLongPtr GwlpUserdata", hWnd)
 			return win32api.DefWindowProc(hWnd, message, wParam, lParam)
 		}
 		if self.hwnd_ != hWnd {
@@ -318,9 +359,32 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 	r.SetY(int(rect.Top))
 	r.SetWidth(int(rect.Right - rect.Left))
 	r.SetHeight(int(rect.Bottom - rect.Top))
-	// parentHwnd := capi.CWindowHandleT(unsafe.Pointer(uintptr(self.hwnd_)))
-	parentHwnd := capi.ToCWindowHandleT(syscall.Handle(self.hwnd_))
-	self.browser_window_.CreateBrowser(parentHwnd, r, self.browser_settings_, nil, nil) // delegate が PDF extension を許可している)
+	if self.is_popup_ {
+		bwHwnd := self.browser_window_.GetWindowHandle()
+		if bwHwnd != 0 {
+			if _, err := win32api.SetParent(bwHwnd, self.hwnd_); err != nil {
+				log.Panicln("T368:", err)
+			}
+			if _, err := win32api.SetWindowPos(bwHwnd, 0,
+				int(rect.Left), int(rect.Top), int(rect.Right-rect.Left), int(rect.Bottom-rect.Top),
+				win32const.SwpNozorder|win32const.SwpNoactivate); err != nil {
+				log.Panicln("T372:", err)
+			}
+			if no_activate, err := win32api.GetWindowLongPtr(self.hwnd_, win32const.GwlExstyle); err == nil {
+				swFlag := win32const.SwShow
+				if no_activate&win32const.WsExNoactivate != 0 {
+					swFlag = win32const.SwShownoactivate
+				}
+				win32api.ShowWindow(bwHwnd, swFlag)
+			} else {
+				log.Panicln("T372:", err)
+			}
+		}
+	} else {
+		// parentHwnd := capi.CWindowHandleT(unsafe.Pointer(uintptr(self.hwnd_)))
+		parentHwnd := capi.ToCWindowHandleT(syscall.Handle(self.hwnd_))
+		self.browser_window_.CreateBrowser(parentHwnd, r, self.browser_settings_, nil, nil) // delegate が PDF extension を許可している)
+	}
 }
 
 func (self *RootWindowWin) OnPaint() {

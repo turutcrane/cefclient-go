@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"syscall"
 	"unsafe"
 
 	"github.com/turutcrane/cefingo/capi"
@@ -89,6 +90,61 @@ func (bw *BrowserWindow) DoClose(
 	return false
 }
 
+func (old *BrowserWindow) OnBeforePopup(
+	self *capi.CLifeSpanHandlerT,
+	browser *capi.CBrowserT,
+	frame *capi.CFrameT,
+	target_url string,
+	target_frame_name string,
+	target_disposition capi.CWindowOpenDispositionT,
+	user_gesture int,
+	popupFeatures *capi.CPopupFeaturesT,
+	windowInfo capi.CWindowInfoT,
+	client *capi.CClientT,
+	settings capi.CBrowserSettingsT,
+	no_javascript_access bool,
+) (
+	ret bool,
+	windowInfoOut capi.CWindowInfoT,
+	clientOut *capi.CClientT,
+	settingsOut capi.CBrowserSettingsT,
+	extra_info *capi.CDictionaryValueT,
+	no_javascript_accessOut bool,
+) {
+
+	settingsOut = settings
+	rect := win32api.Rect{}
+	if popupFeatures.XSet() {
+		rect.Left = win32api.LONG(popupFeatures.X())
+	}
+	if popupFeatures.YSet() {
+		rect.Top = win32api.LONG(popupFeatures.Y())
+	}
+	if popupFeatures.WidthSet() {
+		rect.Right = rect.Left + win32api.LONG(popupFeatures.Width())
+	}
+	if popupFeatures.HeightSet() {
+		rect.Bottom = rect.Top + win32api.LONG(popupFeatures.Height())
+	}
+
+	_, bw := windowManager.CreateRootWindow(true, true, rect, false, false, &settingsOut)
+
+	ret = false
+	clientOut = bw.GetCClientT()
+	windowInfoOut = windowInfo
+
+	temp_hwnd_ := windowManager.GetTempWindow()
+
+	windowInfoOut.SetParentWindow(capi.ToCWindowHandleT(syscall.Handle(temp_hwnd_)))
+	windowInfoOut.SetStyle(
+		win32const.WsChild | win32const.WsClipchildren |
+		 win32const.WsClipsiblings | win32const.WsTabstop | win32const.WsVisible)
+	exStyle := windowInfoOut.ExStyle()
+	windowInfoOut.SetExStyle(exStyle | win32const.WsExNoactivate)
+
+	return ret, windowInfoOut, clientOut, settingsOut, extra_info, no_javascript_access
+}
+
 func (bw *BrowserWindow) OnBrowserClosing(browser *capi.CBrowserT) {
 	bw.is_closing_ = true
 
@@ -98,7 +154,6 @@ func (bw *BrowserWindow) OnBrowserClosing(browser *capi.CBrowserT) {
 func (bw *BrowserWindow) OnBrowserClosed(browser *capi.CBrowserT) {
 	bw.rootWin_.OnBrowserWindowDestroyed()
 }
-
 
 func (bw *BrowserWindow) CreateBrowser(
 	parentHandle capi.CWindowHandleT,

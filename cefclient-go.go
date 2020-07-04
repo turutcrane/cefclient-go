@@ -9,6 +9,7 @@ import (
 
 	"github.com/turutcrane/cefingo/capi"
 	"github.com/turutcrane/cefingo/cef"
+	"github.com/turutcrane/win32api"
 )
 
 var config struct {
@@ -67,7 +68,8 @@ func main() {
 	runtime.UnlockOSThread()
 
 	browserSettings := capi.NewCBrowserSettingsT()
-	windowManager.CreateRootWindow(false, browserSettings)
+	rect := win32api.Rect{Left: 0, Top: 0, Right: 0, Bottom: 0}
+	windowManager.CreateRootWindow(false, true, rect, false, false, browserSettings)
 
 	capi.RunMessageLoop()
 	defer capi.Shutdown()
