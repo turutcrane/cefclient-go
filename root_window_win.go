@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"strings"
 	"syscall"
 	"unicode/utf16"
 	"unsafe"
@@ -750,27 +749,8 @@ func onTestCommand(rw *RootWindowWin, id win32api.UINT) {
 	}
 }
 
-type myStringVisitor struct {
-	browserWindow *BrowserWindow
-}
-
-func (sv *myStringVisitor) Visit(self *capi.CStringVisitorT, cstring string) {
-	s := strings.Replace(cstring, ">", "&gt;", -1)
-	s = strings.Replace(s, "<", "&lt;", -1)
-	ss := "<html><meta charset=\"utf-8\"><body bgcolor=\"white\">Source:<pre>" + s + "</pre></body></html>"
-	log.Println("T761:", ss)
-	sv.browserWindow.resorceManager.text = []byte(ss)
-	sv.browserWindow.resorceManager.mime = "text/html"
-	sv.browserWindow.browser_.GetMainFrame().LoadUrl(kTestOrigin + kTestGetSourcePage)
-}
-
 func runGetSourceTest(browser *BrowserWindow) {
-	mySv := myStringVisitor{
-		browserWindow: browser,
-	}
-	sv := capi.AllocCStringVisitorT()
-	sv.Bind(&mySv)
-	browser.browser_.GetMainFrame().GetSource(sv)
+	browser.GetSource()
 }
 
 func (self *RootWindowWin) NotifyDestroyedIfDone() {

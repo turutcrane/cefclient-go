@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/url"
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -22,12 +23,13 @@ type BrowserWindow struct {
 	capi.RefToCRequestHandlerT
 	capi.RefToCResourceRequestHandlerT
 
-	resorceManager *ResourceManager
+	resourceManager ResourceManager
 }
 
 func NewBrowserWindow(rootWindow *RootWindowWin) *BrowserWindow {
 	bw := &BrowserWindow{}
 	bw.rootWin_ = rootWindow
+	bw.resourceManager.rh = map[string]*capi.CResourceHandlerT{}
 
 	capi.AllocCLifeSpanHandlerT().Bind(bw)
 	capi.AllocCClientT().Bind(bw)
@@ -35,9 +37,6 @@ func NewBrowserWindow(rootWindow *RootWindowWin) *BrowserWindow {
 
 	capi.AllocCRequestHandlerT().Bind(bw)
 	capi.AllocCResourceRequestHandlerT().Bind(bw)
-
-	bw.resorceManager = &ResourceManager{}
-	capi.AllocCResourceHandlerT().Bind(bw.resorceManager)
 
 	return bw
 }
@@ -297,32 +296,43 @@ func (bw *BrowserWindow) GetResourceHandler(
 		log.Println("T285:", request.GetUrl(), err)
 		return handler
 	}
-	log.Println("T300:",u.Scheme, u.Host, kTestOrigin)
-	if u.Scheme + "://" + u.Host + "/" == kTestOrigin {
-		handler = bw.resorceManager.GetCResourceHandlerT()
+	// log.Println("T300:",u.Scheme, u.Host, kTestOrigin)
+	if rh, ok := bw.resourceManager.rh[request.GetUrl()]; ok {
+		handler = rh
 	}
 
 	return handler
 }
 
 type ResourceManager struct {
+	rh map[string]*capi.CResourceHandlerT
+}
+
+func (rm *ResourceManager) AddStringResource(url, mime, content string) {
+	rh := &ResourceHandler{capi.RefToCResourceHandlerT{}, nil, []byte(content), mime, 0}
+	cefHandler := capi.AllocCResourceHandlerT().Bind(rh)
+	rm.rh[url] = cefHandler
+}
+
+type ResourceHandler struct {
 	capi.RefToCResourceHandlerT
 
 	url *url.URL
+
 	text []byte
 	mime string
 	next int
 }
 
 func init() {
-	var rm *ResourceManager
+	var rh *ResourceHandler
 	// capi.CResourceHandlerT
-	var _ capi.ProcessRequestHandler = rm
-	var _ capi.GetResponseHeadersHandler = rm
-	var _ capi.CResourceHandlerTReadHandler = rm
+	var _ capi.ProcessRequestHandler = rh
+	var _ capi.GetResponseHeadersHandler = rh
+	var _ capi.CResourceHandlerTReadHandler = rh
 }
 
-func (rm *ResourceManager) ProcessRequest(
+func (rm *ResourceHandler) ProcessRequest(
 	self *capi.CResourceHandlerT,
 	request *capi.CRequestT,
 	callback *capi.CCallbackT,
@@ -339,7 +349,7 @@ func (rm *ResourceManager) ProcessRequest(
 	return true
 }
 
-func (rm *ResourceManager) GetResponseHeaders(
+func (rm *ResourceHandler) GetResponseHeaders(
 	self *capi.CResourceHandlerT,
 	response *capi.CResponseT,
 ) (int64, string) {
@@ -356,7 +366,7 @@ func (rm *ResourceManager) GetResponseHeaders(
 }
 
 // ReadResponse method is deprecated from cef 75
-func (rm *ResourceManager) Read(
+func (rm *ResourceHandler) Read(
 	self *capi.CResourceHandlerT,
 	data_out []byte,
 	callback *capi.CResourceReadCallbackT,
@@ -380,4 +390,33 @@ func min(x, y int) int {
 		return x
 	}
 	return y
+}
+
+
+func (bw *BrowserWindow) GetSource() {
+	mySv := myStringVisitor{
+		browserWindow: bw,
+	}
+	sv := capi.AllocCStringVisitorT()
+	sv.Bind(&mySv)
+	bw.browser_.GetMainFrame().GetSource(sv)
+
+}
+
+type myStringVisitor struct {
+	browserWindow *BrowserWindow
+}
+
+func init() {
+	var _ capi.CStringVisitorTVisitHandler = (*myStringVisitor)(nil)
+}
+
+func (sv *myStringVisitor) Visit(self *capi.CStringVisitorT, cstring string) {
+	s := strings.Replace(cstring, ">", "&gt;", -1)
+	s = strings.Replace(s, "<", "&lt;", -1)
+	ss := "<html><meta charset=\"utf-8\"><body bgcolor=\"white\">Source:<pre>" + s + "</pre></body></html>"
+	log.Println("T761:", ss)
+
+	sv.browserWindow.resourceManager.AddStringResource(kTestOrigin + kTestGetSourcePage, "text/html", ss)
+	sv.browserWindow.browser_.GetMainFrame().LoadUrl(kTestOrigin + kTestGetSourcePage)
 }
