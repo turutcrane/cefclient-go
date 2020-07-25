@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"strings"
 	"syscall"
 	"unicode/utf16"
 	"unsafe"
@@ -11,28 +12,35 @@ import (
 	"github.com/turutcrane/win32api/win32const"
 )
 
-// #include "tests/cefclient/browser/resource.h"
-import "C"
-
 type RootWindowWin struct {
-	with_controls_                        bool
-	always_on_top_                        bool
-	no_activate_                          bool
-	is_popup_                             bool
-	start_rect_                           win32api.Rect
-	browser_settings_                     *capi.CBrowserSettingsT
-	browser_window_                       *BrowserWindow
-	hwnd_                                 win32api.HWND
-	draggable_region_                     win32api.HRGN
-	font_                                 win32api.HFONT
-	font_height_                          int
-	back_hwnd_                            win32api.HWND
-	forward_hwnd_                         win32api.HWND
-	reload_hwnd_                          win32api.HWND
-	stop_hwnd_                            win32api.HWND
-	edit_hwnd_                            win32api.HWND
-	find_message_id_                      win32api.UINT
-	edit_wndproc_old_                     win32api.WNDPROC
+	with_controls_    bool
+	always_on_top_    bool
+	no_activate_      bool
+	is_popup_         bool
+	start_rect_       win32api.Rect
+	browser_settings_ *capi.CBrowserSettingsT
+	browser_window_   *BrowserWindow
+	hwnd_             win32api.HWND
+	draggable_region_ win32api.HRGN
+	font_             win32api.HFONT
+	font_height_      int
+	back_hwnd_        win32api.HWND
+	forward_hwnd_     win32api.HWND
+	reload_hwnd_      win32api.HWND
+	stop_hwnd_        win32api.HWND
+
+	edit_hwnd_        win32api.HWND
+	edit_wndproc_old_ win32api.WNDPROC
+
+	find_hwnd_        win32api.HWND
+	find_message_id_  win32api.UINT
+	find_wndproc_old_ win32api.WNDPROC
+	find_state_       win32api.Findreplace
+	find_buff_        [80]uint16
+	find_what_last_   string
+	find_next_        bool
+	find_match_case_last_ bool
+
 	called_enable_non_client_dpi_scaling_ bool
 
 	window_destroyed_  bool
@@ -44,6 +52,7 @@ func (rw *RootWindowWin) Init(
 	with_controls bool,
 	rect win32api.Rect,
 	always_on_top bool,
+	
 	no_activate bool,
 	settings *capi.CBrowserSettingsT,
 ) *BrowserWindow {
@@ -78,6 +87,11 @@ func (rw *RootWindowWin) CreateWindow(
 			CefColorGetB(background_color)),
 	)
 	RegisterRootClass(win32api.HINSTANCE(syscall.Handle(hInstance)), window_class, background_brush)
+	r, err := win32api.RegisterWindowMessage(syscall.StringToUTF16Ptr(win32const.Findmsgstring))
+	if err != nil {
+		log.Panicln("T93:", err)
+	}
+	rw.find_message_id_ = r
 
 	dwStyle := win32api.DWORD(win32const.WsOverlappedwindow | win32const.WsClipchildren)
 
@@ -136,12 +150,20 @@ func RootWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPAR
 	}
 	if self != nil && message == self.find_message_id_ {
 		// lpfr := w32.LPFINDREPLACE(lParam)
-		// self->OnFindEvent()
-		log.Panicln("T102: not impremented")
+		if uintptr(lParam) != uintptr(unsafe.Pointer(&self.find_state_)) {
+			log.Panicln("T155: lParam not match", lParam, self.find_state_)
+		}
+		
+		self.OnFindEvent()
 		return 0
 	}
 
 	switch message {
+	case win32const.WmCommand:
+		if self.OnCommand(win32api.UINT(win32api.LOWORD(wParam))) {
+			return 0
+		}
+
 	case win32const.WmGetobject:
 		// Only the lower 32 bits of lParam are valid when checking the object id
 		// because it sometimes gets sign-extended incorrectly (but not always).
@@ -271,7 +293,7 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 			syscall.StringToUTF16Ptr("BUTTON"), syscall.StringToUTF16Ptr("Back"),
 			win32const.WsChild|win32const.WsVisible|win32const.BsPushbutton|win32const.WsDisabled,
 			x_offset, 0, button_width, urlbar_height,
-			self.hwnd_, win32api.HMENU(C.IDC_NAV_BACK),
+			self.hwnd_, win32api.HMENU(IdcNavBack),
 			hInstance, 0,
 		)
 		if err != nil {
@@ -285,7 +307,7 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 			syscall.StringToUTF16Ptr("BUTTON"), syscall.StringToUTF16Ptr("Forward"),
 			win32const.WsChild|win32const.WsVisible|win32const.BsPushbutton|win32const.WsDisabled,
 			x_offset, 0, button_width, urlbar_height,
-			self.hwnd_, win32api.HMENU(C.IDC_NAV_FORWARD),
+			self.hwnd_, win32api.HMENU(IdcNavForward),
 			hInstance, 0,
 		)
 		if err != nil {
@@ -299,7 +321,7 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 			syscall.StringToUTF16Ptr("BUTTON"), syscall.StringToUTF16Ptr("Reload"),
 			win32const.WsChild|win32const.WsVisible|win32const.BsPushbutton|win32const.WsDisabled,
 			x_offset, 0, button_width, urlbar_height,
-			self.hwnd_, win32api.HMENU(C.IDC_NAV_FORWARD),
+			self.hwnd_, win32api.HMENU(IdcNavReload),
 			hInstance, 0,
 		)
 		if err != nil {
@@ -313,7 +335,7 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 			syscall.StringToUTF16Ptr("BUTTON"), syscall.StringToUTF16Ptr("Stop"),
 			win32const.WsChild|win32const.WsVisible|win32const.BsPushbutton|win32const.WsDisabled,
 			x_offset, 0, button_width, urlbar_height,
-			self.hwnd_, win32api.HMENU(C.IDC_NAV_FORWARD),
+			self.hwnd_, win32api.HMENU(IdcNavStop),
 			hInstance, 0,
 		)
 		if err != nil {
@@ -393,7 +415,7 @@ func (self *RootWindowWin) OnPaint() {
 	win32api.EndPaint(self.hwnd_, &ps)
 }
 
-func (sef *RootWindowWin) OnActivate(active bool) {
+func (self *RootWindowWin) OnActivate(active bool) {
 }
 
 func (self *RootWindowWin) OnFocus() {
@@ -571,6 +593,186 @@ func (self *RootWindowWin) OnDestroyed() {
 	self.NotifyDestroyedIfDone()
 }
 
+func (self *RootWindowWin) OnFindEvent() {
+	browser := self.GetBrowser()
+
+	if (self.find_state_.Flags & win32const.FrDialogterm) != 0 {
+		if browser != nil {
+			browser.GetHost().StopFinding(true)
+			self.find_what_last_ = ""
+			self.find_next_ = false
+		}
+
+	} else if ((self.find_state_.Flags & win32const.FrFindnext) != 0 && browser != nil) {
+		match_case := self.find_state_.Flags & win32const.FrMatchcase != 0
+		find_what := syscall.UTF16ToString(self.find_buff_[:])
+		if (match_case != self.find_match_case_last_ || find_what != self.find_what_last_) {
+			if find_what != "" {
+				browser.GetHost().StopFinding(true)
+				self.find_next_ = false
+			}
+			self.find_match_case_last_ = match_case
+			self.find_what_last_ = find_what
+		}
+		browser.GetHost().Find(
+			0,
+			find_what,
+			(self.find_state_.Flags & win32const.FrDown) != 0,
+			 match_case, self.find_next_,
+		)
+		if (!self.find_next_) {
+			self.find_next_ = true
+		}
+	}
+}
+
+func (self *RootWindowWin) OnCommand(id win32api.UINT) bool {
+	if id >= IdTestsFirst && id <= IdTestsLast {
+		onTestCommand(self, id)
+	}
+	switch id {
+	case IdmAbout:
+		self.OnAbout()
+		return true
+	case IdmExit:
+		windowManager.CloseAllWindows(false)
+		return true
+	case IdFind:
+		self.OnFind()
+		return true
+	case IdcNavBack:
+		browser := self.GetBrowser()
+		if browser != nil {
+			browser.GoBack()
+		}
+		return true
+	case IdcNavForward:
+		browser := self.GetBrowser()
+		if browser != nil {
+			browser.GoForward()
+		}
+		return true
+	case IdcNavReload:
+		browser := self.GetBrowser()
+		if browser != nil {
+			browser.Reload()
+		}
+		return true
+	case IdcNavStop:
+		browser := self.GetBrowser()
+		if browser != nil {
+			browser.StopLoad()
+		}
+		return true
+	}
+	return false
+}
+
+func (self *RootWindowWin) OnAbout() {
+	hInstance, err := win32api.GetModuleHandle(nil)
+	if err != nil {
+		log.Panicln("T594:", err)
+	}
+	win32api.DialogBoxParam(
+		win32api.HINSTANCE(syscall.Handle(hInstance)),
+		win32api.MakeIntResource(IddAboutbox),
+		self.hwnd_,
+		win32api.DLGPROC(syscall.NewCallback(AboutWndProc)),
+		0,
+	)
+}
+
+func AboutWndProc(hDlg win32api.HWND, message win32api.UINT, wParam win32api.WPARAM, lParam win32api.LPARAM) win32api.LRESULT {
+	switch message {
+	case win32const.WmInitdialog:
+		return win32const.True
+	case win32const.WmCommand:
+		action := int(win32api.LOWORD(wParam))
+		if action == win32const.Idok || action == win32const.Idcancel {
+			win32api.EndDialog(hDlg, win32api.INT_PTR(action))
+			return win32const.True
+		}
+	}
+	return win32const.False
+}
+
+func (rw *RootWindowWin) OnFind() {
+	if rw.find_hwnd_ != 0 {
+		win32api.SetFocus(rw.find_hwnd_)
+		return
+	}
+	rw.find_state_ = win32api.Findreplace{}
+	rw.find_state_.StructSize = win32api.DWORD((unsafe.Sizeof(win32api.Findreplace{})))
+	rw.find_state_.Owner = rw.hwnd_
+	rw.find_state_.FindWhat = (*uint16)(unsafe.Pointer(&rw.find_buff_))
+	rw.find_state_.FindWhatLen = win32api.WORD(unsafe.Sizeof(rw.find_buff_))
+	rw.find_state_.Flags = win32const.FrHidewholeword | win32const.FrDown
+
+	rw.find_hwnd_ = win32api.FindText(&rw.find_state_)
+	if rw.find_hwnd_ == 0 {
+		r := win32api.CommDlgExtendedError()
+		log.Panicf("T647: %x\n", r)
+	}
+
+	rw.find_wndproc_old_ = SetWndProc(rw.find_hwnd_, FindWndProc)
+	windowManager.SetRootWin(rw.find_hwnd_, rw)
+}
+
+func FindWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPARAM, lParam win32api.LPARAM) win32api.LRESULT {
+	self, ok := windowManager.GetRootWin(hWnd)
+	if !ok {
+		log.Panicln("T656:", hWnd)
+	}
+	if hWnd != self.find_hwnd_ {
+		log.Panicln("T659: find_hwnd_ not match", hWnd, self.find_hwnd_)
+	}
+
+	switch message {
+	case win32const.WmActivate:
+		// nothing to do on single thread message loop
+		return 0
+	case win32const.WmNcdestroy:
+		windowManager.RemoveRootWin(hWnd)
+		self.find_hwnd_ = 0
+	}
+
+	return win32api.CallWindowProc(self.find_wndproc_old_, hWnd, message, wParam, lParam)
+}
+
+func onTestCommand(rw *RootWindowWin, id win32api.UINT) {
+	browser := rw.GetBrowser()
+	if browser == nil {
+		return
+	}
+	switch id {
+	case IdTestsGetsource:
+		runGetSourceTest(rw.browser_window_)
+	}
+}
+
+type myStringVisitor struct {
+	browserWindow *BrowserWindow
+}
+
+func (sv *myStringVisitor) Visit(self *capi.CStringVisitorT, cstring string) {
+	s := strings.Replace(cstring, ">", "&gt;", -1)
+	s = strings.Replace(s, "<", "&lt;", -1)
+	ss := "<html><meta charset=\"utf-8\"><body bgcolor=\"white\">Source:<pre>" + s + "</pre></body></html>"
+	log.Println("T761:", ss)
+	sv.browserWindow.resorceManager.text = []byte(ss)
+	sv.browserWindow.resorceManager.mime = "text/html"
+	sv.browserWindow.browser_.GetMainFrame().LoadUrl(kTestOrigin + kTestGetSourcePage)
+}
+
+func runGetSourceTest(browser *BrowserWindow) {
+	mySv := myStringVisitor{
+		browserWindow: browser,
+	}
+	sv := capi.AllocCStringVisitorT()
+	sv.Bind(&mySv)
+	browser.browser_.GetMainFrame().GetSource(sv)
+}
+
 func (self *RootWindowWin) NotifyDestroyedIfDone() {
 	if self.window_destroyed_ && self.browser_destroyed_ {
 		OnRootWindowDestroyed(self)
@@ -616,6 +818,8 @@ func EditWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPAR
 			return 0
 		}
 	case win32const.WmNcdestroy:
+		windowManager.RemoveRootWin(hWnd)
+		self.edit_hwnd_ = 0
 	}
 
 	return win32api.CallWindowProc(self.edit_wndproc_old_, hWnd, message, wParam, lParam)

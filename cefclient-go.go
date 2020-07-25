@@ -39,9 +39,6 @@ func main() {
 	mainArgs := capi.NewCMainArgsT()
 	cef.CMainArgsTSetInstance(mainArgs)
 
-	browser_process_handler := myBrowserProcessHandler{}
-	capi.AllocCBrowserProcessHandlerT().Bind(&browser_process_handler)
-	defer browser_process_handler.SetCBrowserProcessHandlerT(nil)
 
 	// client := &myClient{}
 	// capi.AllocCClientT().Bind(client)
@@ -50,9 +47,14 @@ func main() {
 
 	// browser_process_handler.SetCClientT(client.GetCClientT())
 
-	app := capi.AllocCAppT().Bind(&myApp{})
-	app.AssocBrowserProcessHandlerT(browser_process_handler.GetCBrowserProcessHandlerT())
-	cef.ExecuteProcess(mainArgs, app)
+	app := &myApp{}
+	capi.AllocCAppT().Bind(app)
+	defer app.GetCAppT().UnbindAll()
+	
+	capi.AllocCBrowserProcessHandlerT().Bind(app)
+	defer app.GetCBrowserProcessHandlerT().UnbindAll()
+
+	cef.ExecuteProcess(mainArgs, app.GetCAppT())
 
 	// browser_process_handler.initial_url = flag.String("url", "https://www.golang.org/", "URL")
 	config.initial_url = flag.String("url", "https://www.golang.org/", "URL")
@@ -64,7 +66,7 @@ func main() {
 	s.SetMultiThreadedMessageLoop(0)
 	s.SetRemoteDebuggingPort(8088)
 
-	cef.Initialize(mainArgs, s, app)
+	cef.Initialize(mainArgs, s, app.GetCAppT())
 	runtime.UnlockOSThread()
 
 	browserSettings := capi.NewCBrowserSettingsT()
@@ -124,4 +126,14 @@ type myBrowserProcessHandler struct {
 // }
 
 type myApp struct {
+	capi.RefToCAppT
+	myBrowserProcessHandler
+}
+
+func init() {
+	var _ capi.GetBrowserProcessHandlerHandler = (*myApp)(nil)
+}
+
+func (app *myApp) GetBrowserProcessHandler(self *capi.CAppT) *capi.CBrowserProcessHandlerT {
+	return app.GetCBrowserProcessHandlerT()
 }

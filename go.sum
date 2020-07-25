@@ -7,9 +7,17 @@ github.com/klauspost/cpuid v1.2.0/go.mod h1:Pj4uuM528wm8OyEC2QMXAi2YiTZ96dNQPGgo
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/remyoudompheng/bigfft v0.0.0-20200410134404-eec4a21b6bb0/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
+github.com/stoewer/go-strcase v1.2.0 h1:Z2iHWqGXH00XYgqDmNgQbIBxf3wrNq0F3feEy0ainaU=
 github.com/stoewer/go-strcase v1.2.0/go.mod h1:IBiWB2sKIp3wVVQ3Y035++gc+knqhUQag1KpM8ahLw8=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.5.1/go.mod h1:5W2xD1RspED5o8YsWQXVCued0rvSQ+mT+I5cxcmMvtA=
+github.com/turutcrane/cefingo v0.3.0 h1:2vsjEOcx+J8EHzLxMdQJj0ear+ALWZlCRvUr4FOTgzw=
+github.com/turutcrane/cefingo v0.3.0/go.mod h1:v06TccfaKKReFWKkat13yV/LyL4rugEDKelHhhnez8E=
+github.com/turutcrane/cefingo v0.3.1 h1:pie++yKOPmWzMhMOjy2cwGZoXe+4xumI/wawcSv5w0M=
+github.com/turutcrane/cefingo v0.3.1/go.mod h1:v06TccfaKKReFWKkat13yV/LyL4rugEDKelHhhnez8E=
+github.com/turutcrane/win32api v0.0.0-20200525130019-e8ae9093fffa/go.mod h1:BeL/w3MUv2nKqI55DOZU8GJtdoOhn/H9IquPqmkjegA=
+github.com/turutcrane/win32api v0.0.0-20200712055021-6e37de89df7d h1:qtAjkOMQTqffxeUFm9gwMYTDDb6RmkgmsLTXFJNFemE=
+github.com/turutcrane/win32api v0.0.0-20200712055021-6e37de89df7d/go.mod h1:0M5CGcICREX8XFggo8rfqtqaScbCghwJuGIldKFTpUk=
 github.com/valyala/bytebufferpool v1.0.0/go.mod h1:6bBcMArwyJ5K/AmCkWv1jt77kVWyCJ6HpOuEn7z0Csc=
 github.com/valyala/fasthttp v1.2.0/go.mod h1:4vX61m6KN+xDduDNwXrhIAVZaZaZiQ1luJk8LWSxF3s=
 github.com/valyala/quicktemplate v1.4.1/go.mod h1:EH+4AkTd43SvgIbQHYu59/cJyxDoOVRUAfrukLPuGJ4=

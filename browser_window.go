@@ -2,10 +2,12 @@ package main
 
 import (
 	"log"
+	"net/url"
 	"syscall"
 	"unsafe"
 
 	"github.com/turutcrane/cefingo/capi"
+	"github.com/turutcrane/cefingo/cef"
 	"github.com/turutcrane/win32api"
 	"github.com/turutcrane/win32api/win32const"
 )
@@ -15,26 +17,54 @@ type BrowserWindow struct {
 	browser_    *capi.CBrowserT
 	is_closing_ bool
 	capi.RefToCClientT
+	capi.RefToCLifeSpanHandlerT
+	capi.RefToCLoadHandlerT
+	capi.RefToCRequestHandlerT
+	capi.RefToCResourceRequestHandlerT
+
+	resorceManager *ResourceManager
 }
 
 func NewBrowserWindow(rootWindow *RootWindowWin) *BrowserWindow {
 	bw := &BrowserWindow{}
 	bw.rootWin_ = rootWindow
 
-	life_span_handler := capi.AllocCLifeSpanHandlerT().Bind(bw)
+	capi.AllocCLifeSpanHandlerT().Bind(bw)
 	capi.AllocCClientT().Bind(bw)
-	// defer client.SetCClientT(nil)
-	bw.GetCClientT().AssocLifeSpanHandlerT(life_span_handler)
+	capi.AllocCLoadHandlerT().Bind(bw)
 
-	load_handler := capi.AllocCLoadHandlerT().Bind(bw)
-	bw.GetCClientT().AssocLoadHandlerT(load_handler)
+	capi.AllocCRequestHandlerT().Bind(bw)
+	capi.AllocCResourceRequestHandlerT().Bind(bw)
+
+	bw.resorceManager = &ResourceManager{}
+	capi.AllocCResourceHandlerT().Bind(bw.resorceManager)
 
 	return bw
 }
 
-// capi.CClientT
 func init() {
-	var _ capi.OnLoadingStateChangeHandler = &BrowserWindow{}
+	var bw *BrowserWindow
+	// capi.CClientT
+	var _ capi.OnLoadingStateChangeHandler = bw
+	var _ capi.GetLifeSpanHandlerHandler = bw
+	var _ capi.CClientTGetLoadHandlerHandler = bw
+	var _ capi.GetRequestHandlerHandler = bw
+
+	// capi.CLoadHandlerT
+	var _ capi.OnLoadingStateChangeHandler = bw
+
+	// capi.CLifeSpanHandlerT
+	var _ capi.OnBeforeCloseHandler = bw
+	var _ capi.OnAfterCreatedHandler = bw
+	var _ capi.DoCloseHandler = bw
+	var _ capi.OnBeforePopupHandler = bw
+
+	// capi.CRequestHandlerT
+	var _ capi.CRequestHandlerTGetResourceRequestHandlerHandler = bw
+
+	// capi.CResourceRequestHandlerT
+	var _ capi.OnBeforeResourceLoadHandler = bw
+	var _ capi.GetResourceHandlerHandler = bw
 }
 
 func (bw *BrowserWindow) OnLoadingStateChange(
@@ -53,12 +83,18 @@ func (bw *BrowserWindow) OnLoadingStateChange(
 	win32api.EnableWindow(rootWin.edit_hwnd_, true)
 }
 
-// capi.CLifeSpanHandlerT
-func init() {
-	var _ capi.OnBeforeCloseHandler = &BrowserWindow{}
-	var _ capi.OnAfterCreatedHandler = &BrowserWindow{}
-	var _ capi.DoCloseHandler = &BrowserWindow{}
+func (bw *BrowserWindow) GetLifeSpanHandler(*capi.CClientT) *capi.CLifeSpanHandlerT {
+	return bw.GetCLifeSpanHandlerT()
 }
+
+func (bw *BrowserWindow) GetLoadHandler(*capi.CClientT) *capi.CLoadHandlerT {
+	return bw.GetCLoadHandlerT()
+}
+
+func (bw *BrowserWindow) GetRequestHandler(*capi.CClientT) *capi.CRequestHandlerT {
+	return bw.GetCRequestHandlerT()
+}
+
 
 func (bw *BrowserWindow) OnBeforeClose(self *capi.CLifeSpanHandlerT, browser *capi.CBrowserT) {
 	// capi.QuitMessageLoop()
@@ -153,6 +189,10 @@ func (bw *BrowserWindow) OnBrowserClosing(browser *capi.CBrowserT) {
 
 func (bw *BrowserWindow) OnBrowserClosed(browser *capi.CBrowserT) {
 	bw.rootWin_.OnBrowserWindowDestroyed()
+	bw.GetCClientT().UnbindAll()
+	bw.GetCLifeSpanHandlerT().UnbindAll()
+	bw.GetCLoadHandlerT().UnbindAll()
+	bw.GetCRequestHandlerT().UnbindAll()
 }
 
 func (bw *BrowserWindow) CreateBrowser(
@@ -219,4 +259,125 @@ func (bw *BrowserWindow) SetBound(x, y int, width, height uint32) {
 
 func (bw *BrowserWindow) IsClosing() bool {
 	return bw.is_closing_
+}
+
+func (bw *BrowserWindow) GetResourceRequestHandler(
+	self *capi.CRequestHandlerT,
+	browser *capi.CBrowserT,
+	frame *capi.CFrameT,
+	request *capi.CRequestT,
+	is_navigation int,
+	is_download int,
+	request_initiator string,
+) (*capi.CResourceRequestHandlerT, bool) {
+	return bw.GetCResourceRequestHandlerT(), false
+}
+
+func (bw *BrowserWindow) OnBeforeResourceLoad(
+	self *capi.CResourceRequestHandlerT,
+	browser *capi.CBrowserT,
+	frame *capi.CFrameT,
+	request *capi.CRequestT,
+	callback *capi.CRequestCallbackT,
+) (ret capi.CReturnValueT) {
+	return capi.RvContinue
+}
+
+const kTestOrigin = "http://tests/"
+const kTestGetSourcePage = "get_source.html"
+
+func (bw *BrowserWindow) GetResourceHandler(
+	self *capi.CResourceRequestHandlerT,
+	browser *capi.CBrowserT,
+	frame *capi.CFrameT,
+	request *capi.CRequestT,
+) (handler *capi.CResourceHandlerT) {
+	u, err := url.Parse(request.GetUrl())
+	if err != nil {
+		log.Println("T285:", request.GetUrl(), err)
+		return handler
+	}
+	log.Println("T300:",u.Scheme, u.Host, kTestOrigin)
+	if u.Scheme + "://" + u.Host + "/" == kTestOrigin {
+		handler = bw.resorceManager.GetCResourceHandlerT()
+	}
+
+	return handler
+}
+
+type ResourceManager struct {
+	capi.RefToCResourceHandlerT
+
+	url *url.URL
+	text []byte
+	mime string
+	next int
+}
+
+func init() {
+	var rm *ResourceManager
+	// capi.CResourceHandlerT
+	var _ capi.ProcessRequestHandler = rm
+	var _ capi.GetResponseHeadersHandler = rm
+	var _ capi.CResourceHandlerTReadHandler = rm
+}
+
+func (rm *ResourceManager) ProcessRequest(
+	self *capi.CResourceHandlerT,
+	request *capi.CRequestT,
+	callback *capi.CCallbackT,
+) bool {
+	u, err := url.Parse(request.GetUrl())
+	if err != nil {
+		capi.Panicf("L305: Error")
+	}
+	rm.url = u
+
+	capi.Logf("L309: %s", rm.url)
+	callback.Cont()
+
+	return true
+}
+
+func (rm *ResourceManager) GetResponseHeaders(
+	self *capi.CResourceHandlerT,
+	response *capi.CResponseT,
+) (int64, string) {
+	capi.Logf("L391: %s", rm.url.Path)
+	response.SetMimeType(rm.mime)
+	response.SetStatus(200)
+	response.SetStatusText("OK")
+
+	h := cef.NewStringMultimap()
+	capi.StringMultimapAppend(h.CefObject(), "Content-Type", rm.mime+"; charset=utf-8")
+	response.SetHeaderMap(h.CefObject())
+
+	return int64(len(rm.text)), ""
+}
+
+// ReadResponse method is deprecated from cef 75
+func (rm *ResourceManager) Read(
+	self *capi.CResourceHandlerT,
+	data_out []byte,
+	callback *capi.CResourceReadCallbackT,
+) (bool, int) {
+	l := min(len(data_out), len(rm.text) - rm.next)
+	for i := 0; i < l; i++ {
+		data_out[i] = rm.text[rm.next+i]
+	}
+
+	rm.next = rm.next + l
+	capi.Logf("L409: %d, %d, %d", len(rm.text), l, rm.next)
+	ret := true
+	if l <= 0 {
+		ret = false
+	}
+	return ret, l
+}
+
+func min(x, y int) int {
+	if x < y {
+		return x
+	}
+	return y
 }

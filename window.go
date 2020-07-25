@@ -13,10 +13,6 @@ import (
 	"github.com/turutcrane/win32api/win32const"
 )
 
-// #cgo pkg-config: cefingo
-// #include "tests/cefclient/browser/resource.h"
-import "C"
-
 type WindowManager struct {
 	sync.Map // hwnd -> *RootWindowWin
 	sync.Mutex
@@ -53,7 +49,7 @@ func (wm *WindowManager) GetTempWindow() win32api.HWND {
 		log.Panicln("T52:", err)
 	}
 	wndClass := win32api.Wndclassex{}
-	wndClass.Size = uint32(unsafe.Sizeof(win32api.Wndclassex{}))
+	wndClass.Size = win32api.UINT(unsafe.Sizeof(win32api.Wndclassex{}))
 	wndClass.WndProc =    win32api.WndProcToWNDPROC(win32api.DefWindowProc)
 	wndClass.Instance =   win32api.HINSTANCE(syscall.Handle(hInstance))
 	wndClass.ClassName =  syscall.StringToUTF16Ptr(kWndClass)
@@ -120,6 +116,18 @@ func (wm *WindowManager) Empty() bool {
 	return mapEmpty
 }
 
+func (wm *WindowManager) CloseAllWindows(force bool) {
+	wm.Range(func(key, value interface{}) bool {
+		rw := value.(*RootWindowWin)
+		rw.Close(force)
+
+		return true
+	})
+	// wm.Map = sync.Map{}
+	// wm.rootWins = nil
+	// wm.temp_window_ = 0
+}
+
 func OnRootWindowDestroyed(root_window *RootWindowWin) {
 	// log.Println("T118:", "OnBeforeClose: QuitMessageLoop")
 
@@ -171,14 +179,14 @@ func RegisterRootClass(hInstance win32api.HINSTANCE, window_class string, backgr
 	}
 	class_regsitered = true
 
-	icon, err := win32api.LoadIcon(hInstance, win32api.MakeIntResource(C.IDI_CEFCLIENT)) // w32.IDI_APPLICATION
+	icon, err := win32api.LoadIcon(hInstance, win32api.MakeIntResource(IdiCefclient)) // w32.IDI_APPLICATION
 	if err != nil {
 		log.Panicln("T105: LoadIcon", err)
 	}
 	// icon := win32api.HICON(w32.LoadIcon(w32.HINSTANCE(hInstance), w32.MakeIntResource(C.IDI_CEFCLIENT))) // w32.IDI_APPLICATION
 	// log.Panicln("T114: LoadIcon", icon, w32.GetLastError())
 
-	iconSm, err := win32api.LoadIcon(hInstance, win32api.MakeIntResource(C.IDI_SMALL))
+	iconSm, err := win32api.LoadIcon(hInstance, win32api.MakeIntResource(IdiSmall))
 	if err != nil {
 		log.Panicln("T109: LoadIcon Sm", err)
 	}
@@ -187,7 +195,7 @@ func RegisterRootClass(hInstance win32api.HINSTANCE, window_class string, backgr
 		log.Panicln("T113: LoadCursor", err)
 	}
 	wndClass := win32api.Wndclassex{
-		Size:       uint32(unsafe.Sizeof(win32api.Wndclassex{})),
+		Size:       win32api.UINT(unsafe.Sizeof(win32api.Wndclassex{})),
 		Style:      win32const.CsHredraw | win32const.CsVredraw,
 		WndProc:    win32api.WNDPROC(syscall.NewCallback(RootWndProc)),
 		ClsExtra:   0,
@@ -196,7 +204,7 @@ func RegisterRootClass(hInstance win32api.HINSTANCE, window_class string, backgr
 		Icon:       icon,
 		Cursor:     cursor,
 		Background: 0,
-		MenuName:   win32api.MakeIntResource(C.IDC_CEFCLIENT),
+		MenuName:   win32api.MakeIntResource(IdcCefclient),
 		ClassName:  syscall.StringToUTF16Ptr(window_class),
 		IconSm:     iconSm,
 	}
