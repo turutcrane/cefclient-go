@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"net/url"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -94,7 +93,6 @@ func (bw *BrowserWindow) GetRequestHandler(*capi.CClientT) *capi.CRequestHandler
 	return bw.GetCRequestHandlerT()
 }
 
-
 func (bw *BrowserWindow) OnBeforeClose(self *capi.CLifeSpanHandlerT, browser *capi.CBrowserT) {
 	// capi.QuitMessageLoop()
 
@@ -173,7 +171,7 @@ func (old *BrowserWindow) OnBeforePopup(
 	windowInfoOut.SetParentWindow(capi.ToCWindowHandleT(syscall.Handle(temp_hwnd_)))
 	windowInfoOut.SetStyle(
 		win32const.WsChild | win32const.WsClipchildren |
-		 win32const.WsClipsiblings | win32const.WsTabstop | win32const.WsVisible)
+			win32const.WsClipsiblings | win32const.WsTabstop | win32const.WsVisible)
 	exStyle := windowInfoOut.ExStyle()
 	windowInfoOut.SetExStyle(exStyle | win32const.WsExNoactivate)
 
@@ -291,12 +289,7 @@ func (bw *BrowserWindow) GetResourceHandler(
 	frame *capi.CFrameT,
 	request *capi.CRequestT,
 ) (handler *capi.CResourceHandlerT) {
-	u, err := url.Parse(request.GetUrl())
-	if err != nil {
-		log.Println("T285:", request.GetUrl(), err)
-		return handler
-	}
-	// log.Println("T300:",u.Scheme, u.Host, kTestOrigin)
+
 	if rh, ok := bw.resourceManager.rh[request.GetUrl()]; ok {
 		handler = rh
 	}
@@ -309,16 +302,13 @@ type ResourceManager struct {
 }
 
 func (rm *ResourceManager) AddStringResource(url, mime, content string) {
-	rh := &ResourceHandler{capi.RefToCResourceHandlerT{}, nil, []byte(content), mime, 0}
+	rh := &ResourceHandler{url, []byte(content), mime, 0}
 	cefHandler := capi.AllocCResourceHandlerT().Bind(rh)
 	rm.rh[url] = cefHandler
 }
 
 type ResourceHandler struct {
-	capi.RefToCResourceHandlerT
-
-	url *url.URL
-
+	url  string
 	text []byte
 	mime string
 	next int
@@ -337,13 +327,7 @@ func (rm *ResourceHandler) ProcessRequest(
 	request *capi.CRequestT,
 	callback *capi.CCallbackT,
 ) bool {
-	u, err := url.Parse(request.GetUrl())
-	if err != nil {
-		capi.Panicf("L305: Error")
-	}
-	rm.url = u
 
-	capi.Logf("L309: %s", rm.url)
 	callback.Cont()
 
 	return true
@@ -353,7 +337,6 @@ func (rm *ResourceHandler) GetResponseHeaders(
 	self *capi.CResourceHandlerT,
 	response *capi.CResponseT,
 ) (int64, string) {
-	capi.Logf("L391: %s", rm.url.Path)
 	response.SetMimeType(rm.mime)
 	response.SetStatus(200)
 	response.SetStatusText("OK")
@@ -371,7 +354,7 @@ func (rm *ResourceHandler) Read(
 	data_out []byte,
 	callback *capi.CResourceReadCallbackT,
 ) (bool, int) {
-	l := min(len(data_out), len(rm.text) - rm.next)
+	l := min(len(data_out), len(rm.text)-rm.next)
 	for i := 0; i < l; i++ {
 		data_out[i] = rm.text[rm.next+i]
 	}
@@ -391,7 +374,6 @@ func min(x, y int) int {
 	}
 	return y
 }
-
 
 func (bw *BrowserWindow) GetSource() {
 	mySv := myStringVisitor{
@@ -415,8 +397,8 @@ func (sv *myStringVisitor) Visit(self *capi.CStringVisitorT, cstring string) {
 	s := strings.Replace(cstring, ">", "&gt;", -1)
 	s = strings.Replace(s, "<", "&lt;", -1)
 	ss := "<html><meta charset=\"utf-8\"><body bgcolor=\"white\">Source:<pre>" + s + "</pre></body></html>"
-	log.Println("T761:", ss)
+	// log.Println("T761:", ss)
 
-	sv.browserWindow.resourceManager.AddStringResource(kTestOrigin + kTestGetSourcePage, "text/html", ss)
+	sv.browserWindow.resourceManager.AddStringResource(kTestOrigin+kTestGetSourcePage, "text/html", ss)
 	sv.browserWindow.browser_.GetMainFrame().LoadUrl(kTestOrigin + kTestGetSourcePage)
 }
