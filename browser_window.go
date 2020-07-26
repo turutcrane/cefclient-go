@@ -21,6 +21,7 @@ type BrowserWindow struct {
 	capi.RefToCLoadHandlerT
 	capi.RefToCRequestHandlerT
 	capi.RefToCResourceRequestHandlerT
+	capi.RefToCDisplayHandlerT
 
 	resourceManager ResourceManager
 }
@@ -37,6 +38,10 @@ func NewBrowserWindow(rootWindow *RootWindowWin) *BrowserWindow {
 	capi.AllocCRequestHandlerT().Bind(bw)
 	capi.AllocCResourceRequestHandlerT().Bind(bw)
 
+	capi.AllocCDisplayHandlerT().Bind(bw)
+
+	capi.AllocCResponseFilterT().Bind(bw)
+
 	return bw
 }
 
@@ -47,7 +52,8 @@ func init() {
 	var _ capi.GetLifeSpanHandlerHandler = bw
 	var _ capi.CClientTGetLoadHandlerHandler = bw
 	var _ capi.GetRequestHandlerHandler = bw
-
+	var _ capi.GetDisplayHandlerHandler = bw
+	
 	// capi.CLoadHandlerT
 	var _ capi.OnLoadingStateChangeHandler = bw
 
@@ -63,6 +69,10 @@ func init() {
 	// capi.CResourceRequestHandlerT
 	var _ capi.OnBeforeResourceLoadHandler = bw
 	var _ capi.GetResourceHandlerHandler = bw
+
+	// capi.CDisplayHandlerT
+	var _ capi.OnAddressChangeHandler = bw
+
 }
 
 func (bw *BrowserWindow) OnLoadingStateChange(
@@ -91,6 +101,10 @@ func (bw *BrowserWindow) GetLoadHandler(*capi.CClientT) *capi.CLoadHandlerT {
 
 func (bw *BrowserWindow) GetRequestHandler(*capi.CClientT) *capi.CRequestHandlerT {
 	return bw.GetCRequestHandlerT()
+}
+
+func (bw *BrowserWindow) GetDisplayHandler(*capi.CClientT) *capi.CDisplayHandlerT {
+	return bw.GetCDisplayHandlerT()
 }
 
 func (bw *BrowserWindow) OnBeforeClose(self *capi.CLifeSpanHandlerT, browser *capi.CBrowserT) {
@@ -190,6 +204,7 @@ func (bw *BrowserWindow) OnBrowserClosed(browser *capi.CBrowserT) {
 	bw.GetCLifeSpanHandlerT().UnbindAll()
 	bw.GetCLoadHandlerT().UnbindAll()
 	bw.GetCRequestHandlerT().UnbindAll()
+	bw.GetCDisplayHandlerT().UnbindAll()
 }
 
 func (bw *BrowserWindow) CreateBrowser(
@@ -282,6 +297,7 @@ func (bw *BrowserWindow) OnBeforeResourceLoad(
 
 const kTestOrigin = "http://tests/"
 const kTestGetSourcePage = "get_source.html"
+const kTestGetTextPage = "get_text.html"
 
 func (bw *BrowserWindow) GetResourceHandler(
 	self *capi.CResourceRequestHandlerT,
@@ -293,7 +309,6 @@ func (bw *BrowserWindow) GetResourceHandler(
 	if rh, ok := bw.resourceManager.rh[request.GetUrl()]; ok {
 		handler = rh
 	}
-
 	return handler
 }
 
@@ -345,6 +360,7 @@ func (rm *ResourceHandler) GetResponseHeaders(
 	capi.StringMultimapAppend(h.CefObject(), "Content-Type", rm.mime+"; charset=utf-8")
 	response.SetHeaderMap(h.CefObject())
 
+	rm.next = 0
 	return int64(len(rm.text)), ""
 }
 
@@ -376,17 +392,21 @@ func min(x, y int) int {
 }
 
 func (bw *BrowserWindow) GetSource() {
+	url := kTestOrigin + kTestGetSourcePage
 	mySv := myStringVisitor{
 		browserWindow: bw,
+		f: func(c string) {
+			bw.resourceManager.AddStringResource(url, "text/html", c)
+			bw.browser_.GetMainFrame().LoadUrl(url)
+		},
 	}
-	sv := capi.AllocCStringVisitorT()
-	sv.Bind(&mySv)
+	sv := capi.AllocCStringVisitorT().Bind(&mySv)
 	bw.browser_.GetMainFrame().GetSource(sv)
-
 }
 
 type myStringVisitor struct {
 	browserWindow *BrowserWindow
+	f             func(content string)
 }
 
 func init() {
@@ -399,6 +419,32 @@ func (sv *myStringVisitor) Visit(self *capi.CStringVisitorT, cstring string) {
 	ss := "<html><meta charset=\"utf-8\"><body bgcolor=\"white\">Source:<pre>" + s + "</pre></body></html>"
 	// log.Println("T761:", ss)
 
-	sv.browserWindow.resourceManager.AddStringResource(kTestOrigin+kTestGetSourcePage, "text/html", ss)
-	sv.browserWindow.browser_.GetMainFrame().LoadUrl(kTestOrigin + kTestGetSourcePage)
+	sv.f(ss)
+}
+
+func (bw *BrowserWindow) GetText() {
+	url := kTestOrigin + kTestGetTextPage
+	mySv := myStringVisitor{
+		browserWindow: bw,
+		f: func(c string) {
+			bw.resourceManager.AddStringResource(url, "text/html", c)
+			bw.browser_.GetMainFrame().LoadUrl(url)
+		},
+	}
+	sv := capi.AllocCStringVisitorT().Bind(&mySv)
+	bw.browser_.GetMainFrame().GetText(sv)
+}
+
+func (bw *BrowserWindow) OnAddressChange(
+	self *capi.CDisplayHandlerT,
+	browser *capi.CBrowserT,
+	frame *capi.CFrameT,
+	url string,
+) {
+	if frame.IsMain() {
+		if bw.rootWin_.edit_hwnd_ != 0 {
+			win32api.SetWindowText(bw.rootWin_.edit_hwnd_, syscall.StringToUTF16Ptr(url))
+		}
+
+	}
 }

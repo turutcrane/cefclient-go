@@ -746,11 +746,18 @@ func onTestCommand(rw *RootWindowWin, id win32api.UINT) {
 	switch id {
 	case IdTestsGetsource:
 		runGetSourceTest(rw.browser_window_)
+	
+	case IdTestsGettext:
+		runGetTextTest(rw.browser_window_)
 	}
 }
 
 func runGetSourceTest(browser *BrowserWindow) {
 	browser.GetSource()
+}
+
+func runGetTextTest(browser *BrowserWindow) {
+	browser.GetText()
 }
 
 func (self *RootWindowWin) NotifyDestroyedIfDone() {
