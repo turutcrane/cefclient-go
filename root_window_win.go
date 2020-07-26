@@ -12,6 +12,8 @@ import (
 )
 
 type RootWindowWin struct {
+	key int
+
 	with_controls_    bool
 	always_on_top_    bool
 	no_activate_      bool
@@ -31,13 +33,13 @@ type RootWindowWin struct {
 	edit_hwnd_        win32api.HWND
 	edit_wndproc_old_ win32api.WNDPROC
 
-	find_hwnd_        win32api.HWND
-	find_message_id_  win32api.UINT
-	find_wndproc_old_ win32api.WNDPROC
-	find_state_       win32api.Findreplace
-	find_buff_        [80]uint16
-	find_what_last_   string
-	find_next_        bool
+	find_hwnd_            win32api.HWND
+	find_message_id_      win32api.UINT
+	find_wndproc_old_     win32api.WNDPROC
+	find_state_           win32api.Findreplace
+	find_buff_            [80]uint16
+	find_what_last_       string
+	find_next_            bool
 	find_match_case_last_ bool
 
 	called_enable_non_client_dpi_scaling_ bool
@@ -51,7 +53,7 @@ func (rw *RootWindowWin) Init(
 	with_controls bool,
 	rect win32api.Rect,
 	always_on_top bool,
-	
+
 	no_activate bool,
 	settings *capi.CBrowserSettingsT,
 ) *BrowserWindow {
@@ -69,8 +71,7 @@ func (rw *RootWindowWin) Init(
 }
 
 func (rw *RootWindowWin) CreateWindow(
-	key int,
-	// initially_hidden bool,
+// initially_hidden bool,
 ) {
 	hInstance, err := win32api.GetModuleHandle(nil)
 	if err != nil {
@@ -123,7 +124,7 @@ func (rw *RootWindowWin) CreateWindow(
 		0, // HWND
 		0, // HMENU
 		win32api.HINSTANCE(hInstance),
-		win32api.LPVOID(key),
+		win32api.LPVOID(rw.key),
 	)
 	if wnd == 0 || err != nil || wnd != rw.hwnd_ {
 		log.Panicln("T52: Failed to CreateWindowsEx", wnd, err, rw.hwnd_)
@@ -152,7 +153,7 @@ func RootWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPAR
 		if uintptr(lParam) != uintptr(unsafe.Pointer(&self.find_state_)) {
 			log.Panicln("T155: lParam not match", lParam, self.find_state_)
 		}
-		
+
 		self.OnFindEvent()
 		return 0
 	}
@@ -436,9 +437,11 @@ func (self *RootWindowWin) OnSize(minimized bool) {
 	}
 
 	var rect win32api.Rect
-	_, err := win32api.GetClientRect(self.hwnd_, &rect)
-	if err != nil {
-		log.Panicln("T269: GetClientRect")
+	if self.hwnd_ != 0 {
+		_, err := win32api.GetClientRect(self.hwnd_, &rect)
+		if err != nil {
+			log.Panicln("T269: GetClientRect", err, self.hwnd_)
+		}
 	}
 
 	if self.with_controls_ && self.edit_hwnd_ != 0 {
@@ -477,6 +480,7 @@ func (self *RootWindowWin) OnSize(minimized bool) {
 		}
 
 		var hdwp win32api.HDWP
+		var err error
 		if browser_hwnd != 0 {
 			hdwp, err = win32api.BeginDeferWindowPos(6)
 		} else {
@@ -602,10 +606,10 @@ func (self *RootWindowWin) OnFindEvent() {
 			self.find_next_ = false
 		}
 
-	} else if ((self.find_state_.Flags & win32const.FrFindnext) != 0 && browser != nil) {
-		match_case := self.find_state_.Flags & win32const.FrMatchcase != 0
+	} else if (self.find_state_.Flags&win32const.FrFindnext) != 0 && browser != nil {
+		match_case := self.find_state_.Flags&win32const.FrMatchcase != 0
 		find_what := syscall.UTF16ToString(self.find_buff_[:])
-		if (match_case != self.find_match_case_last_ || find_what != self.find_what_last_) {
+		if match_case != self.find_match_case_last_ || find_what != self.find_what_last_ {
 			if find_what != "" {
 				browser.GetHost().StopFinding(true)
 				self.find_next_ = false
@@ -616,10 +620,10 @@ func (self *RootWindowWin) OnFindEvent() {
 		browser.GetHost().Find(
 			0,
 			find_what,
-			(self.find_state_.Flags & win32const.FrDown) != 0,
-			 match_case, self.find_next_,
+			(self.find_state_.Flags&win32const.FrDown) != 0,
+			match_case, self.find_next_,
 		)
-		if (!self.find_next_) {
+		if !self.find_next_ {
 			self.find_next_ = true
 		}
 	}
@@ -746,9 +750,15 @@ func onTestCommand(rw *RootWindowWin, id win32api.UINT) {
 	switch id {
 	case IdTestsGetsource:
 		runGetSourceTest(rw.browser_window_)
-	
+
 	case IdTestsGettext:
 		runGetTextTest(rw.browser_window_)
+
+	case IdTestsWindowNew:
+		runNewWindowTest(rw.browser_window_)
+
+	case IdTestsWindowPopup:
+		runPopupWindowTest(rw.browser_window_)
 	}
 }
 
@@ -758,6 +768,17 @@ func runGetSourceTest(browser *BrowserWindow) {
 
 func runGetTextTest(browser *BrowserWindow) {
 	browser.GetText()
+}
+
+func runNewWindowTest(browser *BrowserWindow) {
+	browserSettings := capi.NewCBrowserSettingsT()
+	rect := win32api.Rect{Left: 0, Top: 0, Right: 0, Bottom: 0}
+	windowManager.CreateRootWindow(false, true, rect, false, false, browserSettings)
+}
+
+func runPopupWindowTest(browser *BrowserWindow) {
+	browser.browser_.GetMainFrame().ExecuteJavaScript(
+		"window.open('http://www.google.com');", "about:blank", 0)
 }
 
 func (self *RootWindowWin) NotifyDestroyedIfDone() {
@@ -823,5 +844,9 @@ func (self *RootWindowWin) Close(force bool) {
 }
 
 func (self *RootWindowWin) OnBrowserCreated(browser *capi.CBrowserT) {
-	self.OnSize(false)
+	if self.is_popup_ {
+		self.CreateWindow()
+	} else {
+		self.OnSize(false)
+	}
 }

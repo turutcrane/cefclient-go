@@ -17,7 +17,7 @@ type WindowManager struct {
 	sync.Map // hwnd -> *RootWindowWin
 	sync.Mutex
 
-	rootWins []*RootWindowWin
+	rootWins     []*RootWindowWin
 	temp_window_ win32api.HWND
 }
 
@@ -25,7 +25,7 @@ type WindowManager struct {
 
 var windowManager = &WindowManager{}
 
-func (wm *WindowManager) NewRootWindowWin() (key int, rootWindow *RootWindowWin) {
+func (wm *WindowManager) NewRootWindowWin() (rootWindow *RootWindowWin) {
 	rootWindow = &RootWindowWin{}
 
 	wm.Lock()
@@ -34,9 +34,9 @@ func (wm *WindowManager) NewRootWindowWin() (key int, rootWindow *RootWindowWin)
 		wm.rootWins = append(wm.rootWins, nil)
 	}
 	wm.rootWins = append(wm.rootWins, rootWindow)
-	key = len(wm.rootWins) - 1
+	rootWindow.key = len(wm.rootWins) - 1
 
-	return key, rootWindow
+	return rootWindow
 }
 
 func (wm *WindowManager) GetTempWindow() win32api.HWND {
@@ -50,15 +50,15 @@ func (wm *WindowManager) GetTempWindow() win32api.HWND {
 	}
 	wndClass := win32api.Wndclassex{}
 	wndClass.Size = win32api.UINT(unsafe.Sizeof(win32api.Wndclassex{}))
-	wndClass.WndProc =    win32api.WndProcToWNDPROC(win32api.DefWindowProc)
-	wndClass.Instance =   win32api.HINSTANCE(syscall.Handle(hInstance))
-	wndClass.ClassName =  syscall.StringToUTF16Ptr(kWndClass)
+	wndClass.WndProc = win32api.WndProcToWNDPROC(win32api.DefWindowProc)
+	wndClass.Instance = win32api.HINSTANCE(syscall.Handle(hInstance))
+	wndClass.ClassName = syscall.StringToUTF16Ptr(kWndClass)
 	if win32api.RegisterClassEx(&wndClass) == 0 {
 		log.Panicln("T60: Can not Register Class", kWndClass)
 	}
 	hwnd, err := win32api.CreateWindowEx(0,
 		syscall.StringToUTF16Ptr(kWndClass), nil,
-		win32const.WsOverlappedwindow | win32const.WsClipchildren,
+		win32const.WsOverlappedwindow|win32const.WsClipchildren,
 		0, 0, 1, 1, 0, 0, win32api.HINSTANCE(syscall.Handle(hInstance)), 0,
 	)
 	if err != nil {
@@ -71,17 +71,17 @@ func (wm *WindowManager) GetTempWindow() win32api.HWND {
 func (wm *WindowManager) CreateRootWindow(
 	is_popup bool,
 	with_controls bool,
-	rect win32api.Rect, 
+	rect win32api.Rect,
 	always_on_top bool,
 	no_activate bool,
 	browserSettings *capi.CBrowserSettingsT,
 ) (rootWindow *RootWindowWin, browserWindow *BrowserWindow) {
-	up, rootWindow := wm.NewRootWindowWin()
+	rootWindow = wm.NewRootWindowWin()
 	if is_popup {
 		browserWindow = rootWindow.Init(is_popup, with_controls, rect, always_on_top, no_activate, browserSettings)
 	} else {
 		browserWindow = rootWindow.Init(is_popup, with_controls, rect, always_on_top, no_activate, browserSettings)
-		rootWindow.CreateWindow(up)
+		rootWindow.CreateWindow()
 	}
 	return rootWindow, browserWindow
 }

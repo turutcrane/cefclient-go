@@ -53,7 +53,7 @@ func init() {
 	var _ capi.CClientTGetLoadHandlerHandler = bw
 	var _ capi.GetRequestHandlerHandler = bw
 	var _ capi.GetDisplayHandlerHandler = bw
-	
+
 	// capi.CLoadHandlerT
 	var _ capi.OnLoadingStateChangeHandler = bw
 

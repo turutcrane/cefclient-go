@@ -39,7 +39,6 @@ func main() {
 	mainArgs := capi.NewCMainArgsT()
 	cef.CMainArgsTSetInstance(mainArgs)
 
-
 	// client := &myClient{}
 	// capi.AllocCClientT().Bind(client)
 	// defer client.SetCClientT(nil)
@@ -50,7 +49,7 @@ func main() {
 	app := &myApp{}
 	capi.AllocCAppT().Bind(app)
 	defer app.GetCAppT().UnbindAll()
-	
+
 	capi.AllocCBrowserProcessHandlerT().Bind(app)
 	defer app.GetCBrowserProcessHandlerT().UnbindAll()
 
