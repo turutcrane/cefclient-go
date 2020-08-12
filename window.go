@@ -15,9 +15,14 @@ import (
 
 type WindowManager struct {
 	sync.Map // hwnd -> *RootWindowWin
-	sync.Mutex
 
+	rootWinsLock sync.Mutex
 	rootWins     []*RootWindowWin
+
+	active_root_window_  *RootWindowWin
+	active_browser_lock_ sync.Mutex
+	active_browser_      *capi.CBrowserT
+
 	temp_window_ win32api.HWND
 }
 
@@ -28,8 +33,8 @@ var windowManager = &WindowManager{}
 func (wm *WindowManager) NewRootWindowWin() (rootWindow *RootWindowWin) {
 	rootWindow = &RootWindowWin{}
 
-	wm.Lock()
-	defer wm.Unlock()
+	wm.rootWinsLock.Lock()
+	defer wm.rootWinsLock.Unlock()
 	if len(wm.rootWins) == 0 {
 		wm.rootWins = append(wm.rootWins, nil)
 	}
@@ -83,14 +88,18 @@ func (wm *WindowManager) CreateRootWindow(
 		browserWindow = rootWindow.Init(is_popup, with_controls, rect, always_on_top, no_activate, browserSettings)
 		rootWindow.CreateWindow()
 	}
+
+	wm.OnRootWindowActivated(rootWindow)
+
 	return rootWindow, browserWindow
 }
 
 func (wm *WindowManager) Lookup(key int) (rootWindow *RootWindowWin) {
-	wm.Lock()
-	defer wm.Unlock()
+	wm.rootWinsLock.Lock()
+	defer wm.rootWinsLock.Unlock()
 	return wm.rootWins[key]
 }
+
 func (wm *WindowManager) SetRootWin(hwnd win32api.HWND, rootWin *RootWindowWin) {
 	wm.Store(hwnd, rootWin)
 }
@@ -128,16 +137,53 @@ func (wm *WindowManager) CloseAllWindows(force bool) {
 	// wm.temp_window_ = 0
 }
 
-func OnRootWindowDestroyed(root_window *RootWindowWin) {
+func (wm *WindowManager) GetActiveBrowser() *capi.CBrowserT {
+	wm.active_browser_lock_.Lock()
+	defer wm.active_browser_lock_.Unlock()
+	return wm.active_browser_
+}
+
+func (wm *WindowManager) OnRootWindowActivated(root_window *RootWindowWin) {
+	if root_window.WithExtesion() {
+		// We don't want extension apps to become the active RootWindow.
+		return
+	}
+	if root_window == wm.active_root_window_ {
+		return
+	}
+	wm.active_root_window_ = root_window
+
+	wm.active_browser_lock_.Lock()
+	defer wm.active_browser_lock_.Unlock()
+	wm.active_browser_ = wm.active_root_window_.GetBrowser()
+}
+
+func (wm *WindowManager) OnRootWindowDestroyed(root_window *RootWindowWin) {
 	// log.Println("T118:", "OnBeforeClose: QuitMessageLoop")
 
 	if root_window.edit_hwnd_ != 0 {
-		windowManager.RemoveRootWin(root_window.edit_hwnd_)
+		wm.RemoveRootWin(root_window.edit_hwnd_)
 	}
-	windowManager.RemoveRootWin(root_window.hwnd_)
+	wm.RemoveRootWin(root_window.hwnd_)
 
-	if windowManager.Empty() {
+	if wm.active_root_window_ == root_window {
+		wm.active_root_window_ = nil
+
+		wm.active_browser_lock_.Lock()
+		wm.active_browser_ = nil
+		wm.active_browser_lock_.Unlock()
+	}
+
+	if wm.Empty() {
 		capi.QuitMessageLoop()
+	}
+}
+
+func (wm *WindowManager) OnBrowserCreated(root_window *RootWindowWin, browser *capi.CBrowserT) {
+	if root_window == wm.active_root_window_ {
+		wm.active_browser_lock_.Lock()
+		defer wm.active_browser_lock_.Unlock()
+		wm.active_browser_ = browser
 	}
 }
 

@@ -61,8 +61,8 @@ func main() {
 
 	s := capi.NewCSettingsT()
 	s.SetLogSeverity(capi.LogseverityWarning)
-	s.SetNoSandbox(1)
-	s.SetMultiThreadedMessageLoop(0)
+	s.SetNoSandbox(true)
+	s.SetMultiThreadedMessageLoop(false)
 	s.SetRemoteDebuggingPort(8088)
 
 	cef.Initialize(mainArgs, s, app.GetCAppT())

@@ -2,11 +2,13 @@ package main
 
 import (
 	"log"
+	"strings"
 	"syscall"
 	"unicode/utf16"
 	"unsafe"
 
 	"github.com/turutcrane/cefingo/capi"
+	"github.com/turutcrane/cefingo/cef"
 	"github.com/turutcrane/win32api"
 	"github.com/turutcrane/win32api/win32const"
 )
@@ -16,6 +18,7 @@ type RootWindowWin struct {
 
 	with_controls_    bool
 	always_on_top_    bool
+	with_extension_   bool
 	no_activate_      bool
 	is_popup_         bool
 	start_rect_       win32api.Rect
@@ -46,6 +49,10 @@ type RootWindowWin struct {
 
 	window_destroyed_  bool
 	browser_destroyed_ bool
+}
+
+func (rw *RootWindowWin) WithExtesion() bool {
+	return rw.with_extension_
 }
 
 func (rw *RootWindowWin) Init(
@@ -759,6 +766,9 @@ func onTestCommand(rw *RootWindowWin, id win32api.UINT) {
 
 	case IdTestsWindowPopup:
 		runPopupWindowTest(rw.browser_window_)
+
+	case IdTestsRequest:
+		runRequestTest(rw.browser_window_)
 	}
 }
 
@@ -781,9 +791,38 @@ func runPopupWindowTest(browser *BrowserWindow) {
 		"window.open('http://www.google.com');", "about:blank", 0)
 }
 
+func runRequestTest(browser *BrowserWindow) {
+	frame := browser.browser_.GetMainFrame()
+	url := frame.GetUrl()
+	if !strings.HasPrefix(url, kTestOrigin) {
+		msg := "Please first navigate to a http://tests/ URL. " +
+			"For example, first load Tests > Other Tests."
+		frame.ExecuteJavaScript("alert('"+msg+"');", frame.GetUrl(), 0)
+		return
+	}
+
+	request := capi.RequestCreate()
+	request.SetUrl(kTestOrigin + kTestRequestPage)
+
+	// Add post data to the request.  The correct method and content-
+	// type headers will be set by CEF.
+	postDataElement := capi.PostDataElementCreate()
+	postDataElement.SetToBytes([]byte("arg1=val1&arg2=val2"))
+	postData := capi.PostDataCreate()
+	postData.AddElement(postDataElement)
+	request.SetPostData(postData)
+
+	// Add a custom header
+	h := cef.NewStringMultimap()
+	capi.StringMultimapAppend(h.CefObject(), "X-My-Header", "My Header Value")
+	request.SetHeaderMap(h.CefObject())
+
+	browser.browser_.GetMainFrame().LoadRequest(request)
+}
+
 func (self *RootWindowWin) NotifyDestroyedIfDone() {
 	if self.window_destroyed_ && self.browser_destroyed_ {
-		OnRootWindowDestroyed(self)
+		windowManager.OnRootWindowDestroyed(self)
 	}
 }
 
@@ -849,4 +888,5 @@ func (self *RootWindowWin) OnBrowserCreated(browser *capi.CBrowserT) {
 	} else {
 		self.OnSize(false)
 	}
+	windowManager.OnBrowserCreated(self, browser)
 }

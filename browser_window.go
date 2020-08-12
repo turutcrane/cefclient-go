@@ -292,12 +292,17 @@ func (bw *BrowserWindow) OnBeforeResourceLoad(
 	request *capi.CRequestT,
 	callback *capi.CRequestCallbackT,
 ) (ret capi.CReturnValueT) {
+	// log.Println("T295:", request.GetUrl(), request.GetIdentifier())
+	if request.GetUrl() == kTestOrigin+kTestRequestPage {
+		bw.resourceManager.AddStreamResource(request)
+	}
 	return capi.RvContinue
 }
 
 const kTestOrigin = "http://tests/"
 const kTestGetSourcePage = "get_source.html"
 const kTestGetTextPage = "get_text.html"
+const kTestRequestPage = "request.html"
 
 func (bw *BrowserWindow) GetResourceHandler(
 	self *capi.CResourceRequestHandlerT,
@@ -305,6 +310,7 @@ func (bw *BrowserWindow) GetResourceHandler(
 	frame *capi.CFrameT,
 	request *capi.CRequestT,
 ) (handler *capi.CResourceHandlerT) {
+	// log.Println("T308:", request.GetUrl(), request.GetIdentifier())
 
 	if rh, ok := bw.resourceManager.rh[request.GetUrl()]; ok {
 		handler = rh
@@ -317,12 +323,12 @@ type ResourceManager struct {
 }
 
 func (rm *ResourceManager) AddStringResource(url, mime, content string) {
-	rh := &ResourceHandler{url, []byte(content), mime, 0}
+	rh := &StringResourceHandler{url, []byte(content), mime, 0}
 	cefHandler := capi.AllocCResourceHandlerT().Bind(rh)
 	rm.rh[url] = cefHandler
 }
 
-type ResourceHandler struct {
+type StringResourceHandler struct {
 	url  string
 	text []byte
 	mime string
@@ -330,25 +336,22 @@ type ResourceHandler struct {
 }
 
 func init() {
-	var rh *ResourceHandler
+	var rh *StringResourceHandler
 	// capi.CResourceHandlerT
-	var _ capi.ProcessRequestHandler = rh
+	var _ capi.OpenHandler = rh
 	var _ capi.GetResponseHeadersHandler = rh
 	var _ capi.CResourceHandlerTReadHandler = rh
 }
 
-func (rm *ResourceHandler) ProcessRequest(
+func (rm *StringResourceHandler) Open(
 	self *capi.CResourceHandlerT,
 	request *capi.CRequestT,
 	callback *capi.CCallbackT,
-) bool {
-
-	callback.Cont()
-
-	return true
+) (ret, handle_request bool) {
+	return true, true
 }
 
-func (rm *ResourceHandler) GetResponseHeaders(
+func (rm *StringResourceHandler) GetResponseHeaders(
 	self *capi.CResourceHandlerT,
 	response *capi.CResponseT,
 ) (int64, string) {
@@ -364,8 +367,7 @@ func (rm *ResourceHandler) GetResponseHeaders(
 	return int64(len(rm.text)), ""
 }
 
-// ReadResponse method is deprecated from cef 75
-func (rm *ResourceHandler) Read(
+func (rm *StringResourceHandler) Read(
 	self *capi.CResourceHandlerT,
 	data_out []byte,
 	callback *capi.CResourceReadCallbackT,
@@ -389,6 +391,133 @@ func min(x, y int) int {
 		return x
 	}
 	return y
+}
+
+func GetDumpResponse(request *capi.CRequestT) (stream *capi.CStreamReaderT, responseHeaderMap *cef.StringMultimap) {
+	responseHeaderMap = cef.NewStringMultimap()
+	headerMap := cef.NewStringMultimap()
+	request.GetHeaderMap(headerMap.CefObject())
+	n := capi.StringMultimapFindCount(headerMap.CefObject(), "origin")
+	for i := int64(0); i < n; i++ {
+		if ok, value := capi.StringMultimapEnumerate(headerMap.CefObject(), "origin", i); ok {
+			capi.StringMultimapAppend(headerMap.CefObject(), "Access-Control-Allow-Origin", value)
+		}
+	}
+	if n > 0 {
+		capi.StringMultimapAppend(headerMap.CefObject(), "Access-Control-Allow-Headers", "My-Custom-Header")
+	}
+	dump := DumpRequestContents(request)
+	content := "<html><body bgcolor=\"white\"><pre>" + dump + "</pre></body></html>"
+	stream = capi.StreamReaderCreateForData([]byte(content))
+	return stream, responseHeaderMap
+}
+
+func DumpRequestContents(request *capi.CRequestT) (dump string) {
+	dump += "URL:" + request.GetUrl() + "\n"
+	dump += "Method: " + request.GetMethod() + "\n"
+
+	headerMap := cef.NewStringMultimap()
+	request.GetHeaderMap(headerMap.CefObject())
+	n := capi.StringMultimapSize(headerMap.CefObject())
+	for i := int64(n); i < n; i++ {
+		if ok, key := capi.StringMultimapKey(headerMap.CefObject(), i); ok {
+			dump += "\t" + key + ":"
+		}
+		if ok, value := capi.StringMultimapValue(headerMap.CefObject(), i); ok {
+			dump += value + "\n"
+		}
+	}
+	postData := request.GetPostData()
+	if postData != nil {
+		elementCount := postData.GetElementCount()
+		if elementCount > 0 {
+			elements := postData.GetElements()
+			for _, e := range elements {
+				switch e.GetType() {
+				case capi.PdeTypeBytes:
+					dump += "\tBytes: "
+					n := e.GetBytesCount()
+					if n == 0 {
+						dump += "(empty)\n"
+					} else {
+						dump += string(cef.PostElementGetBytes(e)) + "\n"
+					}
+				case capi.PdeTypeFile:
+					dump += "\tFile: " + e.GetFile()
+				}
+			}
+		}
+	}
+	return dump
+}
+
+func (rm *ResourceManager) AddStreamResource(request *capi.CRequestT) {
+	url := request.GetUrl()
+	stream, header_map := GetDumpResponse(request)
+	rh := &StreamResourceHandler{url, stream, header_map, "text/html", 200, "OK"}
+	cefHandler := capi.AllocCResourceHandlerT().Bind(rh)
+	rm.rh[url] = cefHandler
+}
+
+type StreamResourceHandler struct {
+	url    string
+	stream *capi.CStreamReaderT
+
+	header_map_  *cef.StringMultimap
+	mime_type_   string
+	status_code_ int
+	status_text_ string
+}
+
+func init() {
+	var rh *StreamResourceHandler
+	// capi.CResourceHandlerT
+	var _ capi.OpenHandler = rh
+	var _ capi.GetResponseHeadersHandler = rh
+	var _ capi.CResourceHandlerTReadHandler = rh
+}
+
+func (rm *StreamResourceHandler) Open(
+	self *capi.CResourceHandlerT,
+	request *capi.CRequestT,
+	callback *capi.CCallbackT,
+) (ret, handle_request bool) {
+	log.Println("T482:")
+	return true, true
+}
+
+func (rm *StreamResourceHandler) GetResponseHeaders(
+	self *capi.CResourceHandlerT,
+	response *capi.CResponseT,
+) (response_length int64, redirectUrl string) {
+	response.SetMimeType(rm.mime_type_)
+	response.SetStatus(rm.status_code_)
+	response.SetStatusText(rm.status_text_)
+
+	h := rm.header_map_
+	if h == nil {
+		h = cef.NewStringMultimap()
+	}
+	capi.StringMultimapAppend(h.CefObject(), "Content-Type", rm.mime_type_+"; charset=utf-8")
+	response.SetHeaderMap(h.CefObject())
+
+	return -1, ""
+}
+
+func (rm *StreamResourceHandler) Read(
+	self *capi.CResourceHandlerT,
+	data_out []byte,
+	callback *capi.CResourceReadCallbackT,
+) (read bool, bytes_read int) {
+	bytes_to_read := len(data_out)
+	var count int
+
+	for ok := true; ok; ok = (count > 0 && bytes_read < bytes_to_read) {
+		dp := unsafe.Pointer(&data_out[bytes_read:][0])
+		count = int(rm.stream.Read(dp, 1, int64(bytes_to_read-bytes_read)))
+		bytes_read += count
+	}
+	return bytes_read > 0, bytes_read
 }
 
 func (bw *BrowserWindow) GetSource() {
