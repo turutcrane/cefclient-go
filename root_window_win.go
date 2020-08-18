@@ -769,6 +769,18 @@ func onTestCommand(rw *RootWindowWin, id win32api.UINT) {
 
 	case IdTestsRequest:
 		runRequestTest(rw.browser_window_)
+
+	case IdTestsPluginInfo:
+		runPluginInfo(rw.browser_window_)
+
+	case IdTestsZoomIn:
+		ModifyZoom(rw.browser_window_.browser_, 0.5)
+
+	case IdTestsZoomOut:
+		ModifyZoom(rw.browser_window_.browser_, -0.5)
+
+	case IdTestsZoomReset:
+		rw.browser_window_.browser_.GetHost().SetZoomLevel(0.0)
 	}
 }
 
@@ -818,6 +830,20 @@ func runRequestTest(browser *BrowserWindow) {
 	request.SetHeaderMap(h.CefObject())
 
 	browser.browser_.GetMainFrame().LoadRequest(request)
+}
+
+func runPluginInfo(browser *BrowserWindow) {
+	visitor := &myPluginInfoVisitor{}
+	visitor.html = "<html><head><title>Plugin Info Test</title></head>" +
+		"<body bgcolor=\"white\">" +
+		"\n<b>Installed plugins:</b>"
+	visitor.browser = browser
+
+	capi.VisitWebPluginInfo(capi.AllocCWebPluginInfoVisitorT().Bind(visitor))
+}
+
+func ModifyZoom(browser *capi.CBrowserT, delta float64) {
+	browser.GetHost().SetZoomLevel(browser.GetHost().GetZoomLevel() + delta)
 }
 
 func (self *RootWindowWin) NotifyDestroyedIfDone() {

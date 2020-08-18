@@ -303,6 +303,7 @@ const kTestOrigin = "http://tests/"
 const kTestGetSourcePage = "get_source.html"
 const kTestGetTextPage = "get_text.html"
 const kTestRequestPage = "request.html"
+const kTestPluginInfoPage = "plugin_info.html"
 
 func (bw *BrowserWindow) GetResourceHandler(
 	self *capi.CResourceRequestHandlerT,
@@ -523,7 +524,6 @@ func (rm *StreamResourceHandler) Read(
 func (bw *BrowserWindow) GetSource() {
 	url := kTestOrigin + kTestGetSourcePage
 	mySv := myStringVisitor{
-		browserWindow: bw,
 		f: func(c string) {
 			bw.resourceManager.AddStringResource(url, "text/html", c)
 			bw.browser_.GetMainFrame().LoadUrl(url)
@@ -534,8 +534,7 @@ func (bw *BrowserWindow) GetSource() {
 }
 
 type myStringVisitor struct {
-	browserWindow *BrowserWindow
-	f             func(content string)
+	f func(content string)
 }
 
 func init() {
@@ -554,7 +553,6 @@ func (sv *myStringVisitor) Visit(self *capi.CStringVisitorT, cstring string) {
 func (bw *BrowserWindow) GetText() {
 	url := kTestOrigin + kTestGetTextPage
 	mySv := myStringVisitor{
-		browserWindow: bw,
 		f: func(c string) {
 			bw.resourceManager.AddStringResource(url, "text/html", c)
 			bw.browser_.GetMainFrame().LoadUrl(url)
@@ -576,4 +574,38 @@ func (bw *BrowserWindow) OnAddressChange(
 		}
 
 	}
+}
+
+type myPluginInfoVisitor struct {
+	// capi.RefToCWebPluginInfoVisitorT
+	html    string
+	browser *BrowserWindow
+}
+
+func init() {
+	var _ capi.CWebPluginInfoVisitorTVisitHandler = (*myPluginInfoVisitor)(nil)
+}
+
+func (v *myPluginInfoVisitor) Visit(
+	self *capi.CWebPluginInfoVisitorT,
+	info *capi.CWebPluginInfoT,
+	count int,
+	total int,
+) bool {
+	name := info.GetName()
+	desc := info.GetDescription()
+	ver := info.GetVersion()
+	path := info.GetPath()
+	log.Println("T592:", count, total, name, desc, ver, path)
+	v.html += "\n<br/><br/>Name: " + name +
+		"\n<br/>Description: " + desc +
+		"\n<br/>Version: " + ver +
+		"\n<br/>Path: " + path
+	if count+1 >= total {
+		v.html += "\n</body></html>"
+		url := kTestOrigin + kTestPluginInfoPage
+		v.browser.resourceManager.AddStringResource(url, "text/html", v.html)
+		v.browser.browser_.GetMainFrame().LoadUrl(url)
+	}
+	return true
 }
