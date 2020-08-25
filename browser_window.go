@@ -46,32 +46,32 @@ func NewBrowserWindow(rootWindow *RootWindowWin) *BrowserWindow {
 }
 
 func init() {
-	var bw *BrowserWindow
 	// capi.CClientT
-	var _ capi.OnLoadingStateChangeHandler = bw
-	var _ capi.GetLifeSpanHandlerHandler = bw
-	var _ capi.CClientTGetLoadHandlerHandler = bw
-	var _ capi.GetRequestHandlerHandler = bw
-	var _ capi.GetDisplayHandlerHandler = bw
+	var _ capi.OnLoadingStateChangeHandler = (*BrowserWindow)(nil)
+	var _ capi.GetLifeSpanHandlerHandler = (*BrowserWindow)(nil)
+	var _ capi.CClientTGetLoadHandlerHandler = (*BrowserWindow)(nil)
+	var _ capi.GetRequestHandlerHandler = (*BrowserWindow)(nil)
+	var _ capi.GetDisplayHandlerHandler = (*BrowserWindow)(nil)
 
 	// capi.CLoadHandlerT
-	var _ capi.OnLoadingStateChangeHandler = bw
+	var _ capi.OnLoadingStateChangeHandler = (*BrowserWindow)(nil)
 
 	// capi.CLifeSpanHandlerT
-	var _ capi.OnBeforeCloseHandler = bw
-	var _ capi.OnAfterCreatedHandler = bw
-	var _ capi.DoCloseHandler = bw
-	var _ capi.OnBeforePopupHandler = bw
+	var _ capi.OnBeforeCloseHandler = (*BrowserWindow)(nil)
+	var _ capi.OnAfterCreatedHandler = (*BrowserWindow)(nil)
+	var _ capi.DoCloseHandler = (*BrowserWindow)(nil)
+	var _ capi.OnBeforePopupHandler = (*BrowserWindow)(nil)
 
 	// capi.CRequestHandlerT
-	var _ capi.CRequestHandlerTGetResourceRequestHandlerHandler = bw
+	var _ capi.CRequestHandlerTGetResourceRequestHandlerHandler = (*BrowserWindow)(nil)
+	var _ capi.OnOpenUrlfromTabHandler = (*BrowserWindow)(nil)
 
 	// capi.CResourceRequestHandlerT
-	var _ capi.OnBeforeResourceLoadHandler = bw
-	var _ capi.GetResourceHandlerHandler = bw
+	var _ capi.OnBeforeResourceLoadHandler = (*BrowserWindow)(nil)
+	var _ capi.GetResourceHandlerHandler = (*BrowserWindow)(nil)
 
 	// capi.CDisplayHandlerT
-	var _ capi.OnAddressChangeHandler = bw
+	var _ capi.OnAddressChangeHandler = (*BrowserWindow)(nil)
 
 }
 
@@ -82,7 +82,7 @@ func (bw *BrowserWindow) OnLoadingStateChange(
 	canGoBack bool,
 	canGoForward bool,
 ) {
-	log.Println("T198:", isLoading, canGoBack, canGoForward)
+	// log.Println("T198:", isLoading, canGoBack, canGoForward)
 	rootWin := bw.rootWin_
 	win32api.EnableWindow(rootWin.back_hwnd_, canGoBack)
 	win32api.EnableWindow(rootWin.forward_hwnd_, canGoForward)
@@ -174,7 +174,7 @@ func (old *BrowserWindow) OnBeforePopup(
 		rect.Bottom = rect.Top + win32api.LONG(popupFeatures.Height())
 	}
 
-	_, bw := windowManager.CreateRootWindow(true, true, rect, false, false, &settingsOut)
+	_, bw := windowManager.CreateRootWindow(target_url, true, true, rect, false, false, &settingsOut)
 
 	ret = false
 	clientOut = bw.GetCClientT()
@@ -208,6 +208,7 @@ func (bw *BrowserWindow) OnBrowserClosed(browser *capi.CBrowserT) {
 }
 
 func (bw *BrowserWindow) CreateBrowser(
+	initial_url string,
 	parentHandle capi.CWindowHandleT,
 	rect *capi.CRectT,
 	settings *capi.CBrowserSettingsT,
@@ -225,7 +226,7 @@ func (bw *BrowserWindow) CreateBrowser(
 	capi.BrowserHostCreateBrowser(
 		windowInfo,
 		bw.GetCClientT(),
-		*config.initial_url,
+		initial_url,
 		settings,
 		extra_info,
 		request_context,
@@ -285,6 +286,28 @@ func (bw *BrowserWindow) GetResourceRequestHandler(
 	return bw.GetCResourceRequestHandlerT(), false
 }
 
+func (bw *BrowserWindow) OnOpenUrlfromTab(
+	self *capi.CRequestHandlerT,
+	browser *capi.CBrowserT,
+	frame *capi.CFrameT,
+	target_url string,
+	target_disposition capi.CWindowOpenDispositionT,
+	user_gesture bool,
+) (ret bool) {
+	log.Println("T295: OnOpenUrlfromTab", target_disposition, user_gesture)
+	switch target_disposition {
+	case capi.WodNewBackgroundTab, capi.WodNewForegroundTab:
+		rect := win32api.Rect{}
+		browserSettings := capi.NewCBrowserSettingsT()
+		windowManager.CreateRootWindow(
+			target_url, false, true, rect, false, false, browserSettings,
+		)
+		return true
+	}
+
+	return false
+}
+
 func (bw *BrowserWindow) OnBeforeResourceLoad(
 	self *capi.CResourceRequestHandlerT,
 	browser *capi.CBrowserT,
@@ -292,7 +315,7 @@ func (bw *BrowserWindow) OnBeforeResourceLoad(
 	request *capi.CRequestT,
 	callback *capi.CRequestCallbackT,
 ) (ret capi.CReturnValueT) {
-	// log.Println("T295:", request.GetUrl(), request.GetIdentifier())
+	// log.Println("T306:", request.GetUrl(), request.GetIdentifier())
 	if request.GetUrl() == kTestOrigin+kTestRequestPage {
 		bw.resourceManager.AddStreamResource(request)
 	}

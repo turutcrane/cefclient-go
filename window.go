@@ -74,6 +74,7 @@ func (wm *WindowManager) GetTempWindow() win32api.HWND {
 }
 
 func (wm *WindowManager) CreateRootWindow(
+	inital_url string,
 	is_popup bool,
 	with_controls bool,
 	rect win32api.Rect,
@@ -82,10 +83,9 @@ func (wm *WindowManager) CreateRootWindow(
 	browserSettings *capi.CBrowserSettingsT,
 ) (rootWindow *RootWindowWin, browserWindow *BrowserWindow) {
 	rootWindow = wm.NewRootWindowWin()
-	if is_popup {
-		browserWindow = rootWindow.Init(is_popup, with_controls, rect, always_on_top, no_activate, browserSettings)
-	} else {
-		browserWindow = rootWindow.Init(is_popup, with_controls, rect, always_on_top, no_activate, browserSettings)
+	browserWindow = rootWindow.Init(inital_url, is_popup, with_controls, rect, always_on_top, no_activate, browserSettings)
+
+	if !is_popup {
 		rootWindow.CreateWindow()
 	}
 

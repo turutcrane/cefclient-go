@@ -39,13 +39,6 @@ func main() {
 	mainArgs := capi.NewCMainArgsT()
 	cef.CMainArgsTSetInstance(mainArgs)
 
-	// client := &myClient{}
-	// capi.AllocCClientT().Bind(client)
-	// defer client.SetCClientT(nil)
-	// client.GetCClientT().AssocLifeSpanHandlerT(life_span_handler)
-
-	// browser_process_handler.SetCClientT(client.GetCClientT())
-
 	app := &myApp{}
 	capi.AllocCAppT().Bind(app)
 	defer app.GetCAppT().UnbindAll()
@@ -70,23 +63,11 @@ func main() {
 
 	browserSettings := capi.NewCBrowserSettingsT()
 	rect := win32api.Rect{Left: 0, Top: 0, Right: 0, Bottom: 0}
-	windowManager.CreateRootWindow(false, true, rect, false, false, browserSettings)
+	windowManager.CreateRootWindow(*config.initial_url, false, true, rect, false, false, browserSettings)
 
 	capi.RunMessageLoop()
 	defer capi.Shutdown()
 }
-
-// func init() {
-// 	var _ capi.OnBeforeCloseHandler = myLifeSpanHandler{}
-// }
-
-// type myLifeSpanHandler struct {
-// }
-
-// func (myLifeSpanHandler) OnBeforeClose(self *capi.CLifeSpanHandlerT, brwoser *capi.CBrowserT) {
-// 	capi.Logf("L89:")
-// 	capi.QuitMessageLoop()
-// }
 
 type myBrowserProcessHandler struct {
 	// this reference forms an UNgabagecollectable circular reference
@@ -97,32 +78,6 @@ type myBrowserProcessHandler struct {
 	// initial_url *string
 }
 
-// func (bph myBrowserProcessHandler) OnContextInitialized(sef *capi.CBrowserProcessHandlerT) {
-// 	// factory := capi.AllocCSchemeHandlerFactoryT().Bind(&viewerSchemeHandlerFacgtory)
-// 	// capi.RegisterSchemeHandlerFactory("http", internalHostname, factory)
-
-// 	windowInfo := capi.NewCWindowInfoT()
-// 	windowInfo.SetStyle(capi.WinWsOverlappedwindow | capi.WinWsClipchildren |
-// 		capi.WinWsClipsiblings | capi.WinWsVisible)
-// 	windowInfo.SetParentWindow(nil)
-// 	windowInfo.SetX(capi.WinCwUseDefault)
-// 	windowInfo.SetY(capi.WinCwUseDefault)
-// 	windowInfo.SetWidth(capi.WinCwUseDefault)
-// 	windowInfo.SetHeight(capi.WinCwUseDefault)
-// 	windowInfo.SetWindowName("Vivliostyle Viewer")
-
-// 	browserSettings := capi.NewCBrowserSettingsT()
-
-// 	capi.BrowserHostCreateBrowser(windowInfo,
-// 		bph.GetCClientT(),
-// 		*bph.initial_url,
-// 		browserSettings, nil, nil)
-// }
-
-// type myClient struct {
-// 	capi.RefToCClientT
-// 	initial_url *string
-// }
 
 type myApp struct {
 	capi.RefToCAppT

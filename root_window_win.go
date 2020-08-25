@@ -14,7 +14,8 @@ import (
 )
 
 type RootWindowWin struct {
-	key int
+	key         int
+	initial_url string
 
 	with_controls_    bool
 	always_on_top_    bool
@@ -56,6 +57,7 @@ func (rw *RootWindowWin) WithExtesion() bool {
 }
 
 func (rw *RootWindowWin) Init(
+	initial_url string,
 	is_popup bool,
 	with_controls bool,
 	rect win32api.Rect,
@@ -64,6 +66,7 @@ func (rw *RootWindowWin) Init(
 	no_activate bool,
 	settings *capi.CBrowserSettingsT,
 ) *BrowserWindow {
+	rw.initial_url = initial_url
 	rw.start_rect_ = rect
 	rw.always_on_top_ = always_on_top
 	rw.no_activate_ = no_activate
@@ -412,7 +415,7 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 	} else {
 		// parentHwnd := capi.CWindowHandleT(unsafe.Pointer(uintptr(self.hwnd_)))
 		parentHwnd := capi.ToCWindowHandleT(syscall.Handle(self.hwnd_))
-		self.browser_window_.CreateBrowser(parentHwnd, r, self.browser_settings_, nil, nil) // delegate が PDF extension を許可している)
+		self.browser_window_.CreateBrowser(self.initial_url, parentHwnd, r, self.browser_settings_, nil, nil) // delegate が PDF extension を許可している)
 	}
 }
 
@@ -762,7 +765,7 @@ func onTestCommand(rw *RootWindowWin, id win32api.UINT) {
 		runGetTextTest(rw.browser_window_)
 
 	case IdTestsWindowNew:
-		runNewWindowTest(rw.browser_window_)
+		runNewWindowTest(rw.initial_url, rw.browser_window_)
 
 	case IdTestsWindowPopup:
 		runPopupWindowTest(rw.browser_window_)
@@ -792,10 +795,10 @@ func runGetTextTest(browser *BrowserWindow) {
 	browser.GetText()
 }
 
-func runNewWindowTest(browser *BrowserWindow) {
+func runNewWindowTest(initial_url string, browser *BrowserWindow) {
 	browserSettings := capi.NewCBrowserSettingsT()
-	rect := win32api.Rect{Left: 0, Top: 0, Right: 0, Bottom: 0}
-	windowManager.CreateRootWindow(false, true, rect, false, false, browserSettings)
+	rect := win32api.Rect{}
+	windowManager.CreateRootWindow(initial_url, false, true, rect, false, false, browserSettings)
 }
 
 func runPopupWindowTest(browser *BrowserWindow) {
@@ -910,8 +913,11 @@ func (self *RootWindowWin) Close(force bool) {
 
 func (self *RootWindowWin) OnBrowserCreated(browser *capi.CBrowserT) {
 	if self.is_popup_ {
+		// For popup browsers create the root window once the browser has been
+		// created.
 		self.CreateWindow()
 	} else {
+		// Make sure the browser is sized correctly.
 		self.OnSize(false)
 	}
 	windowManager.OnBrowserCreated(self, browser)
