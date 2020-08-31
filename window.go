@@ -81,9 +81,9 @@ func (wm *WindowManager) CreateRootWindow(
 	always_on_top bool,
 	no_activate bool,
 	browserSettings *capi.CBrowserSettingsT,
-) (rootWindow *RootWindowWin, browserWindow *BrowserWindow) {
+) (rootWindow *RootWindowWin) {
 	rootWindow = wm.NewRootWindowWin()
-	browserWindow = rootWindow.Init(inital_url, is_popup, with_controls, rect, always_on_top, no_activate, browserSettings)
+	rootWindow.Init(inital_url, is_popup, with_controls, rect, always_on_top, no_activate, browserSettings)
 
 	if !is_popup {
 		rootWindow.CreateWindow()
@@ -91,7 +91,7 @@ func (wm *WindowManager) CreateRootWindow(
 
 	wm.OnRootWindowActivated(rootWindow)
 
-	return rootWindow, browserWindow
+	return rootWindow
 }
 
 func (wm *WindowManager) Lookup(key int) (rootWindow *RootWindowWin) {

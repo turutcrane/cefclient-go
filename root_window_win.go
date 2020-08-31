@@ -65,7 +65,7 @@ func (rw *RootWindowWin) Init(
 
 	no_activate bool,
 	settings *capi.CBrowserSettingsT,
-) *BrowserWindow {
+) {
 	rw.initial_url = initial_url
 	rw.start_rect_ = rect
 	rw.always_on_top_ = always_on_top
@@ -77,7 +77,7 @@ func (rw *RootWindowWin) Init(
 	rw.browser_settings_ = settings
 	rw.browser_window_ = NewBrowserWindow(rw)
 
-	return rw.browser_window_
+	return
 }
 
 func (rw *RootWindowWin) CreateWindow(

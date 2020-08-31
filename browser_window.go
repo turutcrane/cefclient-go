@@ -174,10 +174,10 @@ func (old *BrowserWindow) OnBeforePopup(
 		rect.Bottom = rect.Top + win32api.LONG(popupFeatures.Height())
 	}
 
-	_, bw := windowManager.CreateRootWindow(target_url, true, true, rect, false, false, &settingsOut)
+	rw := windowManager.CreateRootWindow(target_url, true, true, rect, false, false, &settingsOut)
 
 	ret = false
-	clientOut = bw.GetCClientT()
+	clientOut = rw.browser_window_.GetCClientT()
 	windowInfoOut = windowInfo
 
 	temp_hwnd_ := windowManager.GetTempWindow()
@@ -258,7 +258,7 @@ func (bw *BrowserWindow) Show() {
 func (bw *BrowserWindow) GetWindowHandle() win32api.HWND {
 	if bw.browser_ != nil {
 		h := bw.browser_.GetHost().GetWindowHandle()
-		return win32api.HWND(uintptr(unsafe.Pointer(h)))
+		return win32api.HWND(capi.ToHandle(h))
 	}
 	return 0
 }
