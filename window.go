@@ -79,11 +79,12 @@ func (wm *WindowManager) CreateRootWindow(
 	with_controls bool,
 	rect win32api.Rect,
 	always_on_top bool,
+	with_osr bool,
 	no_activate bool,
 	browserSettings *capi.CBrowserSettingsT,
 ) (rootWindow *RootWindowWin) {
 	rootWindow = wm.NewRootWindowWin()
-	rootWindow.Init(inital_url, is_popup, with_controls, rect, always_on_top, no_activate, browserSettings)
+	rootWindow.Init(inital_url, is_popup, with_controls, rect, always_on_top, with_osr, no_activate, browserSettings)
 
 	if !is_popup {
 		rootWindow.CreateWindow()

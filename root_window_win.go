@@ -19,12 +19,13 @@ type RootWindowWin struct {
 
 	with_controls_    bool
 	always_on_top_    bool
+	with_osr_         bool
 	with_extension_   bool
 	no_activate_      bool
 	is_popup_         bool
 	start_rect_       win32api.Rect
 	browser_settings_ *capi.CBrowserSettingsT
-	browser_window_   *BrowserWindow
+	browser_window_   *BrowserWindowStd
 	hwnd_             win32api.HWND
 	draggable_region_ win32api.HRGN
 	font_             win32api.HFONT
@@ -62,12 +63,14 @@ func (rw *RootWindowWin) Init(
 	with_controls bool,
 	rect win32api.Rect,
 	always_on_top bool,
+	with_osr bool,
 
 	no_activate bool,
 	settings *capi.CBrowserSettingsT,
 ) {
 	rw.initial_url = initial_url
 	rw.start_rect_ = rect
+	rw.with_osr_ = with_osr
 	rw.always_on_top_ = always_on_top
 	rw.no_activate_ = no_activate
 
@@ -75,7 +78,9 @@ func (rw *RootWindowWin) Init(
 	rw.with_controls_ = with_controls
 	rw.is_popup_ = is_popup
 	rw.browser_settings_ = settings
-	rw.browser_window_ = NewBrowserWindow(rw)
+	rw.browser_window_ = NewBrowserWindowStd(rw)
+
+	rw.browser_window_.is_osr_ = with_osr
 
 	return
 }
@@ -381,10 +386,10 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 		win32api.SetMenu(self.hwnd_, 0)
 	}
 
-	// device_scale_factor := GetWindowScaleFactor(self.hwnd_)
-	// if (with_osr_) {
-	// 	self.browser_window_.SetDeviceScaleFactor(device_scale_factor)
-	// }
+	device_scale_factor := GetWindowScaleFactor(self.hwnd_)
+	if (self.with_osr_) {
+		self.browser_window_.SetDeviceScaleFactor(device_scale_factor)
+	}
 
 	r := &capi.CRectT{}
 	r.SetX(int(rect.Left))
@@ -559,12 +564,12 @@ func (self *RootWindowWin) OnDpiChanged(wParam win32api.WPARAM, lParam win32api.
 		return
 	}
 
-	// if self.browser_window_ != 0 && with_osr_ {
-	//	Scale factor for the new display.
-	//	const float display_scale_factor =
-	//	static_cast<float>(LOWORD(wParam)) / DPI_1X;
-	//	browser_window_->SetDeviceScaleFactor(display_scale_factor);
-	// }
+	if self.browser_window_ != nil && self.with_osr_ {
+		//	Scale factor for the new display.
+		//	static_cast<float>(LOWORD(wParam)) / DPI_1X;
+		display_scale_factor := float32(win32api.LOWORD(wParam)) / DPI_1X
+		self.browser_window_.SetDeviceScaleFactor(display_scale_factor);
+	}
 
 	rect := win32api.LParamToPRect(lParam)
 	self.SetBounds(int(rect.Left), int(rect.Top),
@@ -787,26 +792,27 @@ func onTestCommand(rw *RootWindowWin, id win32api.UINT) {
 	}
 }
 
-func runGetSourceTest(browser *BrowserWindow) {
+func runGetSourceTest(browser *BrowserWindowStd) {
 	browser.GetSource()
 }
 
-func runGetTextTest(browser *BrowserWindow) {
+func runGetTextTest(browser *BrowserWindowStd) {
 	browser.GetText()
 }
 
-func runNewWindowTest(initial_url string, browser *BrowserWindow) {
+func runNewWindowTest(initial_url string, browser *BrowserWindowStd) {
 	browserSettings := capi.NewCBrowserSettingsT()
 	rect := win32api.Rect{}
-	windowManager.CreateRootWindow(initial_url, false, true, rect, false, false, browserSettings)
+	with_osr := browser.browser_.GetHost().IsWindowRenderingDisabled()
+	windowManager.CreateRootWindow(initial_url, false, true, rect, false, with_osr, false, browserSettings)
 }
 
-func runPopupWindowTest(browser *BrowserWindow) {
+func runPopupWindowTest(browser *BrowserWindowStd) {
 	browser.browser_.GetMainFrame().ExecuteJavaScript(
 		"window.open('http://www.google.com');", "about:blank", 0)
 }
 
-func runRequestTest(browser *BrowserWindow) {
+func runRequestTest(browser *BrowserWindowStd) {
 	frame := browser.browser_.GetMainFrame()
 	url := frame.GetUrl()
 	if !strings.HasPrefix(url, kTestOrigin) {
@@ -835,7 +841,7 @@ func runRequestTest(browser *BrowserWindow) {
 	browser.browser_.GetMainFrame().LoadRequest(request)
 }
 
-func runPluginInfo(browser *BrowserWindow) {
+func runPluginInfo(browser *BrowserWindowStd) {
 	visitor := &myPluginInfoVisitor{}
 	visitor.html = "<html><head><title>Plugin Info Test</title></head>" +
 		"<body bgcolor=\"white\">" +

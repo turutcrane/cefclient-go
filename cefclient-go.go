@@ -14,6 +14,7 @@ import (
 
 var config struct {
 	initial_url *string
+	with_osr *bool
 }
 
 func init() {
@@ -34,6 +35,8 @@ func main() {
 		time.Sleep(5 * time.Second)
 		os.Exit(0)
 	}()
+
+	log.Println("T38:", os.Getpid(), os.Args)
 	capi.EnableHighdpiSupport()
 
 	mainArgs := capi.NewCMainArgsT()
@@ -50,6 +53,7 @@ func main() {
 
 	// browser_process_handler.initial_url = flag.String("url", "https://www.golang.org/", "URL")
 	config.initial_url = flag.String("url", "https://www.golang.org/", "URL")
+	config.with_osr = flag.Bool("osr", false, "with Off Screen Rendering")
 	flag.Parse() // should be after cef.ExecuteProcess() or implement CComandLine
 
 	s := capi.NewCSettingsT()
@@ -63,7 +67,7 @@ func main() {
 
 	browserSettings := capi.NewCBrowserSettingsT()
 	rect := win32api.Rect{Left: 0, Top: 0, Right: 0, Bottom: 0}
-	windowManager.CreateRootWindow(*config.initial_url, false, true, rect, false, false, browserSettings)
+	windowManager.CreateRootWindow(*config.initial_url, false, true, rect, false, *config.with_osr, false, browserSettings)
 
 	capi.RunMessageLoop()
 	defer capi.Shutdown()
