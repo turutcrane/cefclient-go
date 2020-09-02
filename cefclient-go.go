@@ -12,10 +12,22 @@ import (
 	"github.com/turutcrane/win32api"
 )
 
-var config struct {
-	initial_url *string
-	with_osr *bool
+type ClientConfig struct {
+	main_url                     string
+	use_windowless_rendering     bool
+	use_transparent_painting     bool
+	external_begin_frame_enabled bool
+	windowless_frame_rate        int
+	background_color             capi.CColorT
+
+	// RootWindowConfig
+	always_on_top bool
+	with_controls bool
+
+	no_activate bool
 }
+
+var mainConfig ClientConfig
 
 func init() {
 	// prefix := fmt.Sprintf("[%d] ", os.Getpid())
@@ -36,7 +48,7 @@ func main() {
 		os.Exit(0)
 	}()
 
-	log.Println("T38:", os.Getpid(), os.Args)
+	// log.Println("T38:", os.Getpid(), os.Args)
 	capi.EnableHighdpiSupport()
 
 	mainArgs := capi.NewCMainArgsT()
@@ -52,10 +64,15 @@ func main() {
 	cef.ExecuteProcess(mainArgs, app.GetCAppT())
 
 	// browser_process_handler.initial_url = flag.String("url", "https://www.golang.org/", "URL")
-	config.initial_url = flag.String("url", "https://www.golang.org/", "URL")
-	config.with_osr = flag.Bool("osr", false, "with Off Screen Rendering")
+	flag.StringVar(&mainConfig.main_url, "url", "https://www.golang.org/", "URL")
+	flag.BoolVar(&mainConfig.use_windowless_rendering, "osr", false, "with Off Screen Rendering")
+	flag.BoolVar(&mainConfig.always_on_top, "always-on-top", false, "always-on-top")
+	flag.BoolVar(&mainConfig.no_activate, "no-activate", false, "no-ctivate")
+	flag.BoolVar(&mainConfig.with_controls, "with-controls", true, "invert hide-controls")
 	flag.Parse() // should be after cef.ExecuteProcess() or implement CComandLine
 
+	log.Println("T74:", mainConfig.with_controls)
+	
 	s := capi.NewCSettingsT()
 	s.SetLogSeverity(capi.LogseverityWarning)
 	s.SetNoSandbox(true)
@@ -67,7 +84,7 @@ func main() {
 
 	browserSettings := capi.NewCBrowserSettingsT()
 	rect := win32api.Rect{Left: 0, Top: 0, Right: 0, Bottom: 0}
-	windowManager.CreateRootWindow(*config.initial_url, false, true, rect, false, *config.with_osr, false, browserSettings)
+	windowManager.CreateRootWindow(mainConfig, false, rect, browserSettings)
 
 	capi.RunMessageLoop()
 	defer capi.Shutdown()
@@ -81,7 +98,6 @@ type myBrowserProcessHandler struct {
 	// capi.RefToCClientT
 	// initial_url *string
 }
-
 
 type myApp struct {
 	capi.RefToCAppT

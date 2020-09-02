@@ -176,7 +176,10 @@ func (origin *BrowserWindowStd) OnBeforePopup(
 		rect.Bottom = rect.Top + win32api.LONG(popupFeatures.Height())
 	}
 
-	rw := windowManager.CreateRootWindow(target_url, true, true, rect, false, origin.is_osr_, false, &settingsOut)
+	config := mainConfig
+	config.main_url = target_url
+	config.use_windowless_rendering = origin.is_osr_
+	rw := windowManager.CreateRootWindow(config, true, rect, &settingsOut)
 
 	ret = false
 	clientOut = rw.browser_window_.GetCClientT()
@@ -301,8 +304,11 @@ func (bw *BrowserWindowStd) OnOpenUrlfromTab(
 	case capi.WodNewBackgroundTab, capi.WodNewForegroundTab:
 		rect := win32api.Rect{}
 		browserSettings := capi.NewCBrowserSettingsT()
+		config := mainConfig
+		config.main_url = target_url
+		config.use_windowless_rendering = bw.is_osr_
 		windowManager.CreateRootWindow(
-			target_url, false, true, rect, false, bw.is_osr_, false, browserSettings,
+			config, false, rect, browserSettings,
 		)
 		return true
 	}

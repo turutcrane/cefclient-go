@@ -58,29 +58,24 @@ func (rw *RootWindowWin) WithExtesion() bool {
 }
 
 func (rw *RootWindowWin) Init(
-	initial_url string,
+	config ClientConfig,
 	is_popup bool,
-	with_controls bool,
 	rect win32api.Rect,
-	always_on_top bool,
-	with_osr bool,
-
-	no_activate bool,
 	settings *capi.CBrowserSettingsT,
 ) {
-	rw.initial_url = initial_url
+	rw.initial_url = config.main_url
 	rw.start_rect_ = rect
-	rw.with_osr_ = with_osr
-	rw.always_on_top_ = always_on_top
-	rw.no_activate_ = no_activate
+	rw.with_osr_ = config.use_windowless_rendering
+	rw.always_on_top_ = config.always_on_top
+	rw.no_activate_ = config.no_activate
 
 	rw.draggable_region_ = win32api.CreateRectRgn(0, 0, 0, 0)
-	rw.with_controls_ = with_controls
+	rw.with_controls_ = config.with_controls
 	rw.is_popup_ = is_popup
 	rw.browser_settings_ = settings
 	rw.browser_window_ = NewBrowserWindowStd(rw)
 
-	rw.browser_window_.is_osr_ = with_osr
+	rw.browser_window_.is_osr_ = rw.with_osr_
 
 	return
 }
@@ -804,7 +799,11 @@ func runNewWindowTest(initial_url string, browser *BrowserWindowStd) {
 	browserSettings := capi.NewCBrowserSettingsT()
 	rect := win32api.Rect{}
 	with_osr := browser.browser_.GetHost().IsWindowRenderingDisabled()
-	windowManager.CreateRootWindow(initial_url, false, true, rect, false, with_osr, false, browserSettings)
+
+	config := mainConfig
+	config.main_url = initial_url
+	config.use_windowless_rendering = with_osr
+	windowManager.CreateRootWindow(config, false, rect, browserSettings)
 }
 
 func runPopupWindowTest(browser *BrowserWindowStd) {
