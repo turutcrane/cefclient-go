@@ -25,7 +25,7 @@ type RootWindowWin struct {
 	is_popup_         bool
 	start_rect_       win32api.Rect
 	browser_settings_ *capi.CBrowserSettingsT
-	browser_window_   *BrowserWindowStd
+	browser_window_   BrowserWindow
 	hwnd_             win32api.HWND
 	draggable_region_ win32api.HRGN
 	font_             win32api.HFONT
@@ -57,6 +57,28 @@ func (rw *RootWindowWin) WithExtesion() bool {
 	return rw.with_extension_
 }
 
+type BrowserWindow interface {
+	SetDeviceScaleFactor(float32)
+	GetWindowHandle() win32api.HWND
+	CreateBrowser(
+		initial_url string,
+		parentHandle capi.CWindowHandleT,
+		rect *capi.CRectT,
+		settings *capi.CBrowserSettingsT,
+		extra_info *capi.CDictionaryValueT,
+		request_context *capi.CRequestContextT,
+	)
+	SetFocus(focus bool)
+	Hide()
+	Show()
+	SetBound(x, y int, width, height uint32)
+	IsClosing() bool
+	GetCBrowserT() *capi.CBrowserT
+	GetSource()
+	GetText()
+	GetPlugInInfoVisitor() *capi.CWebPluginInfoVisitorT
+}
+
 func (rw *RootWindowWin) Init(
 	config ClientConfig,
 	is_popup bool,
@@ -74,8 +96,6 @@ func (rw *RootWindowWin) Init(
 	rw.is_popup_ = is_popup
 	rw.browser_settings_ = settings
 	rw.browser_window_ = NewBrowserWindowStd(rw)
-
-	rw.browser_window_.is_osr_ = rw.with_osr_
 
 	return
 }
@@ -382,9 +402,8 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 	}
 
 	device_scale_factor := GetWindowScaleFactor(self.hwnd_)
-	if (self.with_osr_) {
-		self.browser_window_.SetDeviceScaleFactor(device_scale_factor)
-	}
+	self.browser_window_.SetDeviceScaleFactor(device_scale_factor)
+
 
 	r := &capi.CRectT{}
 	r.SetX(int(rect.Left))
@@ -777,28 +796,28 @@ func onTestCommand(rw *RootWindowWin, id win32api.UINT) {
 		runPluginInfo(rw.browser_window_)
 
 	case IdTestsZoomIn:
-		ModifyZoom(rw.browser_window_.browser_, 0.5)
+		ModifyZoom(rw.browser_window_.GetCBrowserT(), 0.5)
 
 	case IdTestsZoomOut:
-		ModifyZoom(rw.browser_window_.browser_, -0.5)
+		ModifyZoom(rw.browser_window_.GetCBrowserT(), -0.5)
 
 	case IdTestsZoomReset:
-		rw.browser_window_.browser_.GetHost().SetZoomLevel(0.0)
+		rw.browser_window_.GetCBrowserT().GetHost().SetZoomLevel(0.0)
 	}
 }
 
-func runGetSourceTest(browser *BrowserWindowStd) {
+func runGetSourceTest(browser BrowserWindow) {
 	browser.GetSource()
 }
 
-func runGetTextTest(browser *BrowserWindowStd) {
+func runGetTextTest(browser BrowserWindow) {
 	browser.GetText()
 }
 
-func runNewWindowTest(initial_url string, browser *BrowserWindowStd) {
+func runNewWindowTest(initial_url string, browser BrowserWindow) {
 	browserSettings := capi.NewCBrowserSettingsT()
 	rect := win32api.Rect{}
-	with_osr := browser.browser_.GetHost().IsWindowRenderingDisabled()
+	with_osr := browser.GetCBrowserT().GetHost().IsWindowRenderingDisabled()
 
 	config := mainConfig
 	config.main_url = initial_url
@@ -806,13 +825,13 @@ func runNewWindowTest(initial_url string, browser *BrowserWindowStd) {
 	windowManager.CreateRootWindow(config, false, rect, browserSettings)
 }
 
-func runPopupWindowTest(browser *BrowserWindowStd) {
-	browser.browser_.GetMainFrame().ExecuteJavaScript(
+func runPopupWindowTest(browser BrowserWindow) {
+	browser.GetCBrowserT().GetMainFrame().ExecuteJavaScript(
 		"window.open('http://www.google.com');", "about:blank", 0)
 }
 
-func runRequestTest(browser *BrowserWindowStd) {
-	frame := browser.browser_.GetMainFrame()
+func runRequestTest(browser BrowserWindow) {
+	frame := browser.GetCBrowserT().GetMainFrame()
 	url := frame.GetUrl()
 	if !strings.HasPrefix(url, kTestOrigin) {
 		msg := "Please first navigate to a http://tests/ URL. " +
@@ -837,17 +856,12 @@ func runRequestTest(browser *BrowserWindowStd) {
 	capi.StringMultimapAppend(h.CefObject(), "X-My-Header", "My Header Value")
 	request.SetHeaderMap(h.CefObject())
 
-	browser.browser_.GetMainFrame().LoadRequest(request)
+	browser.GetCBrowserT().GetMainFrame().LoadRequest(request)
 }
 
-func runPluginInfo(browser *BrowserWindowStd) {
-	visitor := &myPluginInfoVisitor{}
-	visitor.html = "<html><head><title>Plugin Info Test</title></head>" +
-		"<body bgcolor=\"white\">" +
-		"\n<b>Installed plugins:</b>"
-	visitor.browser = browser
-
-	capi.VisitWebPluginInfo(capi.AllocCWebPluginInfoVisitorT().Bind(visitor))
+func runPluginInfo(browser BrowserWindow) {
+	visitor := browser.GetPlugInInfoVisitor()
+	capi.VisitWebPluginInfo(visitor)
 }
 
 func ModifyZoom(browser *capi.CBrowserT, delta float64) {
@@ -867,7 +881,7 @@ func (self *RootWindowWin) SetBounds(x, y int, width, height uint32) {
 }
 
 func (self *RootWindowWin) GetBrowser() *capi.CBrowserT {
-	return self.browser_window_.browser_
+	return self.browser_window_.GetCBrowserT()
 }
 
 const MaxUrlLength = 255

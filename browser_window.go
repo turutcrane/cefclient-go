@@ -32,6 +32,7 @@ func NewBrowserWindowStd(rootWindow *RootWindowWin) *BrowserWindowStd {
 	bw := &BrowserWindowStd{}
 	bw.rootWin_ = rootWindow
 	bw.resourceManager.rh = map[string]*capi.CResourceHandlerT{}
+	bw.is_osr_ = rootWindow.with_osr_
 
 	capi.AllocCLifeSpanHandlerT().Bind(bw)
 	capi.AllocCClientT().Bind(bw)
@@ -182,7 +183,7 @@ func (origin *BrowserWindowStd) OnBeforePopup(
 	rw := windowManager.CreateRootWindow(config, true, rect, &settingsOut)
 
 	ret = false
-	clientOut = rw.browser_window_.GetCClientT()
+	clientOut = rw.browser_window_.(*BrowserWindowStd).GetCClientT()
 	windowInfoOut = windowInfo
 
 	temp_hwnd_ := windowManager.GetTempWindow()
@@ -195,6 +196,10 @@ func (origin *BrowserWindowStd) OnBeforePopup(
 	windowInfoOut.SetExStyle(exStyle | win32const.WsExNoactivate)
 
 	return ret, windowInfoOut, clientOut, settingsOut, extra_info, no_javascript_access
+}
+
+func (bw *BrowserWindowStd) GetCBrowserT() *capi.CBrowserT {
+	return bw.browser_
 }
 
 func (bw *BrowserWindowStd) OnBrowserClosing(browser *capi.CBrowserT) {
@@ -640,7 +645,17 @@ func (v *myPluginInfoVisitor) Visit(
 		v.html += "\n</body></html>"
 		url := kTestOrigin + kTestPluginInfoPage
 		v.browser.resourceManager.AddStringResource(url, "text/html", v.html)
-		v.browser.browser_.GetMainFrame().LoadUrl(url)
+		v.browser.GetCBrowserT().GetMainFrame().LoadUrl(url)
 	}
 	return true
+}
+
+func (bw *BrowserWindowStd) GetPlugInInfoVisitor() *capi.CWebPluginInfoVisitorT {
+	visitor := &myPluginInfoVisitor{}
+	visitor.html = "<html><head><title>Plugin Info Test</title></head>" +
+		"<body bgcolor=\"white\">" +
+		"\n<b>Installed plugins:</b>"
+	visitor.browser = bw
+
+	return capi.AllocCWebPluginInfoVisitorT().Bind(visitor)
 }
