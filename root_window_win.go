@@ -62,8 +62,8 @@ type BrowserWindow interface {
 	GetWindowHandle() win32api.HWND
 	CreateBrowser(
 		initial_url string,
-		parentHandle capi.CWindowHandleT,
-		rect *capi.CRectT,
+		parentHwnd win32api.HWND,
+		rect capi.CRectT,
 		settings *capi.CBrowserSettingsT,
 		extra_info *capi.CDictionaryValueT,
 		request_context *capi.CRequestContextT,
@@ -110,13 +110,13 @@ func (rw *RootWindowWin) CreateWindow(
 	window_title := "cefclient"
 	window_class := "CEFCLIENT"
 
-	background_color := CefColorSetARGB(255, 255, 255, 255)
+	background_color := mainConfig.background_color
 	background_brush := win32api.CreateSolidBrush(
 		RGB(CefColorGetR(background_color),
 			CefColorGetG(background_color),
 			CefColorGetB(background_color)),
 	)
-	RegisterRootClass(win32api.HINSTANCE(syscall.Handle(hInstance)), window_class, background_brush)
+	RegisterRootClass(win32api.HINSTANCE(hInstance), window_class, background_brush)
 	r, err := win32api.RegisterWindowMessage(syscall.StringToUTF16Ptr(win32const.Findmsgstring))
 	if err != nil {
 		log.Panicln("T93:", err)
@@ -405,7 +405,7 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 	self.browser_window_.SetDeviceScaleFactor(device_scale_factor)
 
 
-	r := &capi.CRectT{}
+	r := capi.CRectT{}
 	r.SetX(int(rect.Left))
 	r.SetY(int(rect.Top))
 	r.SetWidth(int(rect.Right - rect.Left))
@@ -421,9 +421,9 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 				win32const.SwpNozorder|win32const.SwpNoactivate); err != nil {
 				log.Panicln("T372:", err)
 			}
-			if no_activate, err := win32api.GetWindowLongPtr(self.hwnd_, win32const.GwlExstyle); err == nil {
+			if exStyle, err := win32api.GetWindowLongPtr(self.hwnd_, win32const.GwlExstyle); err == nil {
 				swFlag := win32const.SwShow
-				if no_activate&win32const.WsExNoactivate != 0 {
+				if exStyle&win32const.WsExNoactivate != 0 {
 					swFlag = win32const.SwShownoactivate
 				}
 				win32api.ShowWindow(bwHwnd, swFlag)
@@ -432,9 +432,7 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 			}
 		}
 	} else {
-		// parentHwnd := capi.CWindowHandleT(unsafe.Pointer(uintptr(self.hwnd_)))
-		parentHwnd := capi.ToCWindowHandleT(syscall.Handle(self.hwnd_))
-		self.browser_window_.CreateBrowser(self.initial_url, parentHwnd, r, self.browser_settings_, nil, nil) // delegate が PDF extension を許可している)
+		self.browser_window_.CreateBrowser(self.initial_url, self.hwnd_, r, self.browser_settings_, nil, nil) // delegate が PDF extension を許可している)
 	}
 }
 
@@ -706,7 +704,7 @@ func (self *RootWindowWin) OnAbout() {
 		log.Panicln("T594:", err)
 	}
 	win32api.DialogBoxParam(
-		win32api.HINSTANCE(syscall.Handle(hInstance)),
+		win32api.HINSTANCE(hInstance),
 		win32api.MakeIntResource(IddAboutbox),
 		self.hwnd_,
 		win32api.DLGPROC(syscall.NewCallback(AboutWndProc)),
@@ -940,4 +938,20 @@ func (self *RootWindowWin) OnBrowserCreated(browser *capi.CBrowserT) {
 		self.OnSize(false)
 	}
 	windowManager.OnBrowserCreated(self, browser)
+}
+
+func OsrWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPARAM, lParam win32api.LPARAM) win32api.LRESULT {
+	return 0
+}
+
+func (rw *RootWindowWin) OnLoadingStateChange(
+	isLoading bool,
+	canGoBack bool,
+	canGoForward bool,
+) {
+	win32api.EnableWindow(rw.back_hwnd_, canGoBack)
+	win32api.EnableWindow(rw.forward_hwnd_, canGoForward)
+	win32api.EnableWindow(rw.reload_hwnd_, !isLoading)
+	win32api.EnableWindow(rw.stop_hwnd_, isLoading)
+	win32api.EnableWindow(rw.edit_hwnd_, true)
 }

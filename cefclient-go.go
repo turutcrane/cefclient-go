@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/turutcrane/cefingo/capi"
@@ -13,18 +14,22 @@ import (
 )
 
 type ClientConfig struct {
-	main_url                     string
-	use_windowless_rendering     bool
-	use_transparent_painting     bool
-	external_begin_frame_enabled bool
-	windowless_frame_rate        int
-	background_color             capi.CColorT
+	main_url                 string
+	use_transparent_painting bool
 
 	// RootWindowConfig
 	always_on_top bool
 	with_controls bool
-
 	no_activate bool
+
+	// Off screen rendering options
+	use_windowless_rendering     bool
+	show_update_rect             bool
+	external_begin_frame_enabled bool
+	background_color             capi.CColorT
+	windowless_frame_rate        int
+
+	use_views bool
 }
 
 var mainConfig ClientConfig
@@ -43,7 +48,7 @@ func main() {
 		ppid := os.Getppid()
 		proc, _ := os.FindProcess(ppid)
 		status, _ := proc.Wait()
-		log.Println("Parent:", ppid, status)
+		log.Println("T51, Parent:", ppid, status)
 		time.Sleep(5 * time.Second)
 		os.Exit(0)
 	}()
@@ -69,10 +74,16 @@ func main() {
 	flag.BoolVar(&mainConfig.always_on_top, "always-on-top", false, "always-on-top")
 	flag.BoolVar(&mainConfig.no_activate, "no-activate", false, "no-ctivate")
 	flag.BoolVar(&mainConfig.with_controls, "with-controls", true, "invert hide-controls")
+	flag.BoolVar(&mainConfig.show_update_rect, "show-update-rect", false, "show update rect on OSR mode")
+	flag.IntVar(&mainConfig.windowless_frame_rate, "off-screen-frame-rate", 30, "Off screen frame rate")
+	background_color_name := flag.String("background-color", "", "off-scren-frame window background color")
 	flag.Parse() // should be after cef.ExecuteProcess() or implement CComandLine
+	background_color := parseColor(*background_color_name)
+	if background_color == 0 && !mainConfig.use_views {
+		background_color = CefColorSetARGB(255, 255, 255, 255)
+	}
+	mainConfig.background_color = background_color
 
-	log.Println("T74:", mainConfig.with_controls)
-	
 	s := capi.NewCSettingsT()
 	s.SetLogSeverity(capi.LogseverityWarning)
 	s.SetNoSandbox(true)
@@ -110,4 +121,20 @@ func init() {
 
 func (app *myApp) GetBrowserProcessHandler(self *capi.CAppT) *capi.CBrowserProcessHandlerT {
 	return app.GetCBrowserProcessHandlerT()
+}
+
+func parseColor(color string) capi.CColorT {
+	switch strings.ToLower(color) {
+	case "black":
+		return CefColorSetARGB(255, 0, 0, 0)
+	case "blue":
+		return CefColorSetARGB(255, 0, 0, 255)
+	case "green":
+		return CefColorSetARGB(255, 0, 255, 0)
+	case "red":
+		return CefColorSetARGB(255, 255, 0, 0)
+	case "white":
+		return CefColorSetARGB(255,255, 255, 255)
+	}
+	return 0
 }

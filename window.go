@@ -14,7 +14,7 @@ import (
 )
 
 type WindowManager struct {
-	sync.Map // hwnd -> *RootWindowWin
+	rootWindowMap sync.Map // hwnd -> *RootWindowWin
 
 	rootWinsLock sync.Mutex
 	rootWins     []*RootWindowWin
@@ -24,6 +24,8 @@ type WindowManager struct {
 	active_browser_      *capi.CBrowserT
 
 	temp_window_ win32api.HWND
+
+	browserWindowOsrMap sync.Map // hwnd -> *BrowserWindowOsrMap
 }
 
 // var rootWins = []*RootWindowWin{nil} // index 0 is not usable.
@@ -56,7 +58,7 @@ func (wm *WindowManager) GetTempWindow() win32api.HWND {
 	wndClass := win32api.Wndclassex{}
 	wndClass.Size = win32api.UINT(unsafe.Sizeof(win32api.Wndclassex{}))
 	wndClass.WndProc = win32api.WndProcToWNDPROC(win32api.DefWindowProc)
-	wndClass.Instance = win32api.HINSTANCE(syscall.Handle(hInstance))
+	wndClass.Instance = win32api.HINSTANCE(hInstance)
 	wndClass.ClassName = syscall.StringToUTF16Ptr(kWndClass)
 	if win32api.RegisterClassEx(&wndClass) == 0 {
 		log.Panicln("T60: Can not Register Class", kWndClass)
@@ -64,7 +66,7 @@ func (wm *WindowManager) GetTempWindow() win32api.HWND {
 	hwnd, err := win32api.CreateWindowEx(0,
 		syscall.StringToUTF16Ptr(kWndClass), nil,
 		win32const.WsOverlappedwindow|win32const.WsClipchildren,
-		0, 0, 1, 1, 0, 0, win32api.HINSTANCE(syscall.Handle(hInstance)), 0,
+		0, 0, 1, 1, 0, 0, win32api.HINSTANCE(hInstance), 0,
 	)
 	if err != nil {
 		log.Panicln("T69: Failed to CreateWindowsEx", err)
@@ -98,11 +100,11 @@ func (wm *WindowManager) Lookup(key int) (rootWindow *RootWindowWin) {
 }
 
 func (wm *WindowManager) SetRootWin(hwnd win32api.HWND, rootWin *RootWindowWin) {
-	wm.Store(hwnd, rootWin)
+	wm.rootWindowMap.Store(hwnd, rootWin)
 }
 
 func (wm *WindowManager) GetRootWin(hwnd win32api.HWND) (rootWin *RootWindowWin, exist bool) {
-	if r, ok := wm.Load(hwnd); ok {
+	if r, ok := wm.rootWindowMap.Load(hwnd); ok {
 		rootWin = r.(*RootWindowWin)
 		exist = ok
 	}
@@ -110,12 +112,12 @@ func (wm *WindowManager) GetRootWin(hwnd win32api.HWND) (rootWin *RootWindowWin,
 }
 
 func (wm *WindowManager) RemoveRootWin(hwnd win32api.HWND) {
-	wm.Delete(hwnd)
+	wm.rootWindowMap.Delete(hwnd)
 }
 
 func (wm *WindowManager) Empty() bool {
 	var mapEmpty = true
-	wm.Range(func(key, value interface{}) bool {
+	wm.rootWindowMap.Range(func(key, value interface{}) bool {
 		mapEmpty = false
 		return false
 	})
@@ -123,7 +125,7 @@ func (wm *WindowManager) Empty() bool {
 }
 
 func (wm *WindowManager) CloseAllWindows(force bool) {
-	wm.Range(func(key, value interface{}) bool {
+	wm.rootWindowMap.Range(func(key, value interface{}) bool {
 		rw := value.(*RootWindowWin)
 		rw.Close(force)
 
@@ -132,6 +134,18 @@ func (wm *WindowManager) CloseAllWindows(force bool) {
 	// wm.Map = sync.Map{}
 	// wm.rootWins = nil
 	// wm.temp_window_ = 0
+}
+
+func (wm *WindowManager) SetBrowserWindowOsr(hwnd win32api.HWND, browserWindowOsr *BrowserWindowOsr) {
+	wm.rootWindowMap.Store(hwnd, browserWindowOsr)
+}
+
+func (wm *WindowManager) GetBrowserWindowOsr(hwnd win32api.HWND) (browserWindowOsr *BrowserWindowOsr, exist bool) {
+	if r, ok := wm.rootWindowMap.Load(hwnd); ok {
+		browserWindowOsr = r.(*BrowserWindowOsr)
+		exist = ok
+	}
+	return browserWindowOsr, exist
 }
 
 func (wm *WindowManager) GetActiveBrowser() *capi.CBrowserT {
@@ -226,9 +240,6 @@ func RegisterRootClass(hInstance win32api.HINSTANCE, window_class string, backgr
 	if err != nil {
 		log.Panicln("T105: LoadIcon", err)
 	}
-	// icon := win32api.HICON(w32.LoadIcon(w32.HINSTANCE(hInstance), w32.MakeIntResource(C.IDI_CEFCLIENT))) // w32.IDI_APPLICATION
-	// log.Panicln("T114: LoadIcon", icon, w32.GetLastError())
-
 	iconSm, err := win32api.LoadIcon(hInstance, win32api.MakeIntResource(IdiSmall))
 	if err != nil {
 		log.Panicln("T109: LoadIcon Sm", err)
@@ -245,6 +256,41 @@ func RegisterRootClass(hInstance win32api.HINSTANCE, window_class string, backgr
 		WndExtra:   0,
 		Instance:   hInstance,
 		Icon:       icon,
+		Cursor:     cursor,
+		Background: background_brush,
+		MenuName:   win32api.MakeIntResource(IdcCefclient),
+		ClassName:  syscall.StringToUTF16Ptr(window_class),
+		IconSm:     iconSm,
+	}
+	if win32api.RegisterClassEx(&wndClass) == 0 {
+		log.Panicln("T109: Can not Register Class", window_class)
+	}
+	return 
+}
+
+var class_regsitered_osr bool
+func RegisterOsrClass(hInstance win32api.HINSTANCE, window_class string, background_brush win32api.HBRUSH) {
+	if class_regsitered_osr {
+		return
+	}
+	class_regsitered_osr = true
+
+	cursor, err := win32api.LoadCursor(0, win32const.IdcArrow)
+	if err != nil {
+		log.Panicln("T113: LoadCursor", err)
+	}
+	iconSm, err := win32api.LoadIcon(hInstance, win32api.MakeIntResource(IdiSmall))
+	if err != nil {
+		log.Panicln("T109: LoadIcon Sm", err)
+	}
+	wndClass := win32api.Wndclassex{
+		Size:       win32api.UINT(unsafe.Sizeof(win32api.Wndclassex{})),
+		Style:      win32const.CsOwndc,
+		WndProc:    win32api.WNDPROC(syscall.NewCallback(OsrWndProc)),
+		ClsExtra:   0,
+		WndExtra:   0,
+		Instance:   hInstance,
+		Icon:       0,
 		Cursor:     cursor,
 		Background: 0,
 		MenuName:   win32api.MakeIntResource(IdcCefclient),

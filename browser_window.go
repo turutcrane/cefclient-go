@@ -16,7 +16,8 @@ type BrowserWindowStd struct {
 	rootWin_    *RootWindowWin
 	browser_    *capi.CBrowserT
 	is_closing_ bool
-	is_osr_     bool
+	is_osr_     bool   // これはいらないかも type assersion でいいかも。
+	resourceManager ResourceManager
 
 	capi.RefToCClientT
 	capi.RefToCLifeSpanHandlerT
@@ -25,7 +26,6 @@ type BrowserWindowStd struct {
 	capi.RefToCResourceRequestHandlerT
 	capi.RefToCDisplayHandlerT
 
-	resourceManager ResourceManager
 }
 
 func NewBrowserWindowStd(rootWindow *RootWindowWin) *BrowserWindowStd {
@@ -50,7 +50,6 @@ func NewBrowserWindowStd(rootWindow *RootWindowWin) *BrowserWindowStd {
 
 func init() {
 	// capi.CClientT
-	var _ capi.OnLoadingStateChangeHandler = (*BrowserWindowStd)(nil)
 	var _ capi.GetLifeSpanHandlerHandler = (*BrowserWindowStd)(nil)
 	var _ capi.CClientTGetLoadHandlerHandler = (*BrowserWindowStd)(nil)
 	var _ capi.GetRequestHandlerHandler = (*BrowserWindowStd)(nil)
@@ -87,11 +86,8 @@ func (bw *BrowserWindowStd) OnLoadingStateChange(
 ) {
 	// log.Println("T198:", isLoading, canGoBack, canGoForward)
 	rootWin := bw.rootWin_
-	win32api.EnableWindow(rootWin.back_hwnd_, canGoBack)
-	win32api.EnableWindow(rootWin.forward_hwnd_, canGoForward)
-	win32api.EnableWindow(rootWin.reload_hwnd_, !isLoading)
-	win32api.EnableWindow(rootWin.stop_hwnd_, isLoading)
-	win32api.EnableWindow(rootWin.edit_hwnd_, true)
+
+	rootWin.OnLoadingStateChange(isLoading, canGoBack, canGoForward)
 }
 
 func (bw *BrowserWindowStd) GetLifeSpanHandler(*capi.CClientT) *capi.CLifeSpanHandlerT {
@@ -135,8 +131,10 @@ func (bw *BrowserWindowStd) DoClose(
 	browser *capi.CBrowserT,
 ) bool {
 	log.Println("T83: DoClose")
-	bw.OnBrowserClosing(browser)
 
+	bw.is_closing_ = true
+	bw.rootWin_.OnBrowserWindowClosing()
+	
 	return false
 }
 
@@ -202,12 +200,6 @@ func (bw *BrowserWindowStd) GetCBrowserT() *capi.CBrowserT {
 	return bw.browser_
 }
 
-func (bw *BrowserWindowStd) OnBrowserClosing(browser *capi.CBrowserT) {
-	bw.is_closing_ = true
-
-	bw.rootWin_.OnBrowserWindowClosing()
-}
-
 func (bw *BrowserWindowStd) OnBrowserClosed(browser *capi.CBrowserT) {
 	bw.rootWin_.OnBrowserWindowDestroyed()
 	bw.GetCClientT().UnbindAll()
@@ -219,19 +211,25 @@ func (bw *BrowserWindowStd) OnBrowserClosed(browser *capi.CBrowserT) {
 
 func (bw *BrowserWindowStd) CreateBrowser(
 	initial_url string,
-	parentHandle capi.CWindowHandleT,
-	rect *capi.CRectT,
+	parentHwnd win32api.HWND,
+	rect capi.CRectT,
 	settings *capi.CBrowserSettingsT,
 	extra_info *capi.CDictionaryValueT,
 	request_context *capi.CRequestContextT,
 ) {
 	windowInfo := &capi.CWindowInfoT{}
-	windowInfo.SetParentWindow(parentHandle)
+	windowInfo.SetParentWindow(capi.ToCWindowHandleT(syscall.Handle(parentHwnd)))
 	windowInfo.SetX(rect.X())
 	windowInfo.SetY(rect.Y())
 	windowInfo.SetWidth(rect.Width())
 	windowInfo.SetHeight(rect.Height())
 	windowInfo.SetStyle(win32const.WsChild | win32const.WsClipchildren | win32const.WsClipsiblings | win32const.WsTabstop | win32const.WsVisible)
+
+	if exStyle, err := win32api.GetWindowLongPtr(parentHwnd, win32const.GwlExstyle); err == nil {
+		if exStyle & win32const.WsExNoactivate != 0 {
+			windowInfo.SetExStyle(windowInfo.ExStyle() | win32const.WsExNoactivate)
+		}
+	}
 
 	capi.BrowserHostCreateBrowser(
 		windowInfo,
