@@ -59,7 +59,7 @@ func (rw *RootWindowWin) WithExtesion() bool {
 
 type BrowserWindow interface {
 	SetDeviceScaleFactor(float32)
-	GetWindowHandle() win32api.HWND
+	// GetWindowHandle() win32api.HWND
 	CreateBrowser(
 		initial_url string,
 		parentHwnd win32api.HWND,
@@ -71,12 +71,9 @@ type BrowserWindow interface {
 	SetFocus(focus bool)
 	Hide()
 	Show()
-	SetBound(x, y int, width, height uint32)
 	IsClosing() bool
 	GetCBrowserT() *capi.CBrowserT
-	GetSource()
-	GetText()
-	GetPlugInInfoVisitor() *capi.CWebPluginInfoVisitorT
+	GetResourceManager() *ResourceManager
 }
 
 func (rw *RootWindowWin) Init(
@@ -95,7 +92,17 @@ func (rw *RootWindowWin) Init(
 	rw.with_controls_ = config.with_controls
 	rw.is_popup_ = is_popup
 	rw.browser_settings_ = settings
-	rw.browser_window_ = NewBrowserWindowStd(rw)
+	if rw.with_osr_ {
+		rw.browser_window_ = NewBrowserWindowOsr(
+			rw,
+			mainConfig.show_update_rect,
+			mainConfig.external_begin_frame_enabled,
+			mainConfig.windowless_frame_rate,
+			mainConfig.background_color,
+		)
+	} else {
+		rw.browser_window_ = NewBrowserWindowStd(rw)
+	}
 
 	return
 }
@@ -112,9 +119,9 @@ func (rw *RootWindowWin) CreateWindow(
 
 	background_color := mainConfig.background_color
 	background_brush := win32api.CreateSolidBrush(
-		RGB(CefColorGetR(background_color),
-			CefColorGetG(background_color),
-			CefColorGetB(background_color)),
+		RGB(capi.ColorGetR(background_color),
+			capi.ColorGetG(background_color),
+			capi.ColorGetB(background_color)),
 	)
 	RegisterRootClass(win32api.HINSTANCE(hInstance), window_class, background_brush)
 	r, err := win32api.RegisterWindowMessage(syscall.StringToUTF16Ptr(win32const.Findmsgstring))
@@ -140,7 +147,7 @@ func (rw *RootWindowWin) CreateWindow(
 		width = win32const.CwUsedefault
 		height = win32const.CwUsedefault
 	} else {
-		if _, err := win32api.AdjustWindowRectEx(&rw.start_rect_, dwStyle, true, dwExStyle); err != nil {
+		if err := win32api.AdjustWindowRectEx(&rw.start_rect_, dwStyle, true, dwExStyle); err != nil {
 			log.Panicln("T85:", err)
 		}
 	}
@@ -294,11 +301,10 @@ func RootWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPAR
 
 func (self *RootWindowWin) OnNCCreate(cs *win32api.Createstruct) {
 	if IsProcessPerMonitorDpiAware() {
-		enable_non_client_dpi_scaling, err := win32api.EnableNonClientDpiScaling(self.hwnd_)
-		if err != nil {
+		if err := win32api.EnableNonClientDpiScaling(self.hwnd_); err != nil {
 			log.Panicln("T191:", err)
 		}
-		self.called_enable_non_client_dpi_scaling_ = enable_non_client_dpi_scaling
+		self.called_enable_non_client_dpi_scaling_ = true
 	}
 }
 
@@ -306,8 +312,7 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 	hInstance := cs.Instance
 
 	var rect win32api.Rect
-	_, err := win32api.GetClientRect(self.hwnd_, &rect)
-	if err != nil {
+	if err := win32api.GetClientRect(self.hwnd_, &rect); err != nil {
 		log.Panicln("T221: GetClientRect")
 	}
 	log.Printf("T155: OnCreate")
@@ -318,63 +323,63 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 		button_width := GetButtonWidth(self.hwnd_)
 		urlbar_height := GetURLBarHeight(self.hwnd_)
 		// with_controles_
-		back_hwnd_, err := win32api.CreateWindowEx(
+		if back_hwnd_, err := win32api.CreateWindowEx(
 			win32api.DWORD(0),
 			syscall.StringToUTF16Ptr("BUTTON"), syscall.StringToUTF16Ptr("Back"),
 			win32const.WsChild|win32const.WsVisible|win32const.BsPushbutton|win32const.WsDisabled,
 			x_offset, 0, button_width, urlbar_height,
 			self.hwnd_, win32api.HMENU(IdcNavBack),
 			hInstance, 0,
-		)
-		if err != nil {
+		); err == nil {
+			self.back_hwnd_ = back_hwnd_
+		} else {
 			log.Panicln("T242: Create Button", err)
 		}
-		self.back_hwnd_ = back_hwnd_
 		x_offset += button_width
 
-		forward_hwnd_, err := win32api.CreateWindowEx(
+		if forward_hwnd_, err := win32api.CreateWindowEx(
 			win32api.DWORD(0),
 			syscall.StringToUTF16Ptr("BUTTON"), syscall.StringToUTF16Ptr("Forward"),
 			win32const.WsChild|win32const.WsVisible|win32const.BsPushbutton|win32const.WsDisabled,
 			x_offset, 0, button_width, urlbar_height,
 			self.hwnd_, win32api.HMENU(IdcNavForward),
 			hInstance, 0,
-		)
-		if err != nil {
+		); err == nil {
+			self.forward_hwnd_ = forward_hwnd_
+		} else {
 			log.Panicln("T242: Create Button", err)
 		}
-		self.forward_hwnd_ = forward_hwnd_
 		x_offset += button_width
 
-		reload_hwnd_, err := win32api.CreateWindowEx(
+		if reload_hwnd_, err := win32api.CreateWindowEx(
 			win32api.DWORD(0),
 			syscall.StringToUTF16Ptr("BUTTON"), syscall.StringToUTF16Ptr("Reload"),
 			win32const.WsChild|win32const.WsVisible|win32const.BsPushbutton|win32const.WsDisabled,
 			x_offset, 0, button_width, urlbar_height,
 			self.hwnd_, win32api.HMENU(IdcNavReload),
 			hInstance, 0,
-		)
-		if err != nil {
+		); err == nil {
+			self.reload_hwnd_ = reload_hwnd_
+		} else {
 			log.Panicln("T242: Create Button", err)
 		}
-		self.reload_hwnd_ = reload_hwnd_
 		x_offset += button_width
 
-		stop_hwnd_, err := win32api.CreateWindowEx(
+		if stop_hwnd_, err := win32api.CreateWindowEx(
 			win32api.DWORD(0),
 			syscall.StringToUTF16Ptr("BUTTON"), syscall.StringToUTF16Ptr("Stop"),
 			win32const.WsChild|win32const.WsVisible|win32const.BsPushbutton|win32const.WsDisabled,
 			x_offset, 0, button_width, urlbar_height,
 			self.hwnd_, win32api.HMENU(IdcNavStop),
 			hInstance, 0,
-		)
-		if err != nil {
+		); err == nil {
+			self.stop_hwnd_ = stop_hwnd_
+		} else {
 			log.Panicln("T242: Create Button", err)
 		}
-		self.stop_hwnd_ = stop_hwnd_
 		x_offset += button_width
 
-		edit_hwnd_, err := win32api.CreateWindowEx(
+		if edit_hwnd_, err := win32api.CreateWindowEx(
 			win32api.DWORD(0),
 			syscall.StringToUTF16Ptr("EDIT"), nil,
 			win32const.WsChild|win32const.WsVisible|win32const.WsBorder|
@@ -382,19 +387,19 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 			x_offset, 0, int(rect.Right)-button_width*4, urlbar_height,
 			self.hwnd_, 0,
 			hInstance, 0,
-		)
-		if err != nil {
+		); err == nil {
+			self.edit_hwnd_ = edit_hwnd_
+		} else {
 			log.Panicln("T242: Create Button", err)
 		}
-		self.edit_hwnd_ = edit_hwnd_
 		x_offset += button_width
 
 		// // Override the edit control's window procedure.
-		self.edit_wndproc_old_ = SetWndProc(edit_hwnd_, EditWndProc)
+		self.edit_wndproc_old_ = SetWndProc(self.edit_hwnd_, EditWndProc)
 
 		// // Associate |this| with the edit window.
 		// SetUserDataPtr(edit_hwnd_, this)
-		windowManager.SetRootWin(edit_hwnd_, self)
+		windowManager.SetRootWin(self.edit_hwnd_, self)
 
 		rect.Top += win32api.LONG(urlbar_height)
 	} else {
@@ -404,19 +409,18 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 	device_scale_factor := GetWindowScaleFactor(self.hwnd_)
 	self.browser_window_.SetDeviceScaleFactor(device_scale_factor)
 
-
 	r := capi.CRectT{}
 	r.SetX(int(rect.Left))
 	r.SetY(int(rect.Top))
 	r.SetWidth(int(rect.Right - rect.Left))
 	r.SetHeight(int(rect.Bottom - rect.Top))
 	if self.is_popup_ {
-		bwHwnd := self.browser_window_.GetWindowHandle()
+		bwHwnd := GetWindowHandle(self.browser_window_.GetCBrowserT())
 		if bwHwnd != 0 {
 			if _, err := win32api.SetParent(bwHwnd, self.hwnd_); err != nil {
 				log.Panicln("T368:", err)
 			}
-			if _, err := win32api.SetWindowPos(bwHwnd, 0,
+			if err := win32api.SetWindowPos(bwHwnd, 0,
 				int(rect.Left), int(rect.Top), int(rect.Right-rect.Left), int(rect.Bottom-rect.Top),
 				win32const.SwpNozorder|win32const.SwpNoactivate); err != nil {
 				log.Panicln("T372:", err)
@@ -465,8 +469,7 @@ func (self *RootWindowWin) OnSize(minimized bool) {
 
 	var rect win32api.Rect
 	if self.hwnd_ != 0 {
-		_, err := win32api.GetClientRect(self.hwnd_, &rect)
-		if err != nil {
+		if err := win32api.GetClientRect(self.hwnd_, &rect); err != nil {
 			log.Panicln("T269: GetClientRect", err, self.hwnd_)
 		}
 	}
@@ -475,9 +478,10 @@ func (self *RootWindowWin) OnSize(minimized bool) {
 		button_width := GetButtonWidth(self.hwnd_)
 		urlbar_height := GetURLBarHeight(self.hwnd_)
 		font_height := LogicalToDevice(14, GetWindowScaleFactor(self.hwnd_))
+		log.Println("T482:,", font_height, self.font_height_)
 
 		if font_height != self.font_height_ {
-			font_height = self.font_height_
+			self.font_height_ = font_height
 			if self.font_ != 0 {
 				win32api.DeleteObject(win32api.HGDIOBJ(self.font_))
 			}
@@ -494,7 +498,7 @@ func (self *RootWindowWin) OnSize(minimized bool) {
 
 			win32api.SendMessage(self.back_hwnd_, win32const.WmSetfont, win32api.WPARAM(self.font_), 1)
 			win32api.SendMessage(self.forward_hwnd_, win32const.WmSetfont, win32api.WPARAM(self.font_), 1)
-			win32api.SendMessage(self.reload_hwnd_, win32const.WmSetfocus, win32api.WPARAM(self.font_), 1)
+			win32api.SendMessage(self.reload_hwnd_, win32const.WmSetfont, win32api.WPARAM(self.font_), 1)
 			win32api.SendMessage(self.stop_hwnd_, win32const.WmSetfont, win32api.WPARAM(self.font_), 1)
 			win32api.SendMessage(self.edit_hwnd_, win32const.WmSetfont, win32api.WPARAM(self.font_), 1)
 		}
@@ -503,7 +507,7 @@ func (self *RootWindowWin) OnSize(minimized bool) {
 
 		var browser_hwnd win32api.HWND
 		if self.browser_window_ != nil {
-			browser_hwnd = self.browser_window_.GetWindowHandle()
+			browser_hwnd = GetWindowHandle(self.browser_window_.GetCBrowserT())
 		}
 
 		var hdwp win32api.HDWP
@@ -554,12 +558,12 @@ func (self *RootWindowWin) OnSize(minimized bool) {
 				win32const.SwpNozorder,
 			)
 		}
-		_, err = win32api.EndDeferWindowPos(hdwp)
+		err = win32api.EndDeferWindowPos(hdwp)
 		if err != nil {
 			log.Panicln("T359:", err)
 		}
 	} else if self.browser_window_ != nil {
-		self.browser_window_.SetBound(0, 0, uint32(rect.Right), uint32(rect.Bottom))
+		SetBounds(self.browser_window_.GetCBrowserT(), 0, 0, uint32(rect.Right), uint32(rect.Bottom))
 	}
 }
 
@@ -580,7 +584,7 @@ func (self *RootWindowWin) OnDpiChanged(wParam win32api.WPARAM, lParam win32api.
 		//	Scale factor for the new display.
 		//	static_cast<float>(LOWORD(wParam)) / DPI_1X;
 		display_scale_factor := float32(win32api.LOWORD(wParam)) / DPI_1X
-		self.browser_window_.SetDeviceScaleFactor(display_scale_factor);
+		self.browser_window_.SetDeviceScaleFactor(display_scale_factor)
 	}
 
 	rect := win32api.LParamToPRect(lParam)
@@ -805,11 +809,11 @@ func onTestCommand(rw *RootWindowWin, id win32api.UINT) {
 }
 
 func runGetSourceTest(browser BrowserWindow) {
-	browser.GetSource()
+	GetSource(browser)
 }
 
 func runGetTextTest(browser BrowserWindow) {
-	browser.GetText()
+	GetText(browser)
 }
 
 func runNewWindowTest(initial_url string, browser BrowserWindow) {
@@ -858,7 +862,7 @@ func runRequestTest(browser BrowserWindow) {
 }
 
 func runPluginInfo(browser BrowserWindow) {
-	visitor := browser.GetPlugInInfoVisitor()
+	visitor := GetPlugInInfoVisitor(browser.GetCBrowserT(), browser.GetResourceManager())
 	capi.VisitWebPluginInfo(visitor)
 }
 
@@ -938,10 +942,6 @@ func (self *RootWindowWin) OnBrowserCreated(browser *capi.CBrowserT) {
 		self.OnSize(false)
 	}
 	windowManager.OnBrowserCreated(self, browser)
-}
-
-func OsrWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPARAM, lParam win32api.LPARAM) win32api.LRESULT {
-	return 0
 }
 
 func (rw *RootWindowWin) OnLoadingStateChange(

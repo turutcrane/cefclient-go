@@ -13,19 +13,17 @@ import (
 )
 
 type BrowserWindowStd struct {
-	rootWin_    *RootWindowWin
-	browser_    *capi.CBrowserT
-	is_closing_ bool
-	is_osr_     bool   // これはいらないかも type assersion でいいかも。
+	rootWin_        *RootWindowWin
+	browser_        *capi.CBrowserT
+	is_closing_     bool
+	is_osr_         bool // これはいらないかも type assersion でいいかも。
 	resourceManager ResourceManager
 
 	capi.RefToCClientT
 	capi.RefToCLifeSpanHandlerT
 	capi.RefToCLoadHandlerT
 	capi.RefToCRequestHandlerT
-	capi.RefToCResourceRequestHandlerT
 	capi.RefToCDisplayHandlerT
-
 }
 
 func NewBrowserWindowStd(rootWindow *RootWindowWin) *BrowserWindowStd {
@@ -39,42 +37,37 @@ func NewBrowserWindowStd(rootWindow *RootWindowWin) *BrowserWindowStd {
 	capi.AllocCLoadHandlerT().Bind(bw)
 
 	capi.AllocCRequestHandlerT().Bind(bw)
-	capi.AllocCResourceRequestHandlerT().Bind(bw)
+	capi.AllocCResourceRequestHandlerT().Bind(&bw.resourceManager)
 
 	capi.AllocCDisplayHandlerT().Bind(bw)
-
 	capi.AllocCResponseFilterT().Bind(bw)
 
 	return bw
 }
 
 func init() {
+	var bw *BrowserWindowStd
 	// capi.CClientT
-	var _ capi.GetLifeSpanHandlerHandler = (*BrowserWindowStd)(nil)
-	var _ capi.CClientTGetLoadHandlerHandler = (*BrowserWindowStd)(nil)
-	var _ capi.GetRequestHandlerHandler = (*BrowserWindowStd)(nil)
-	var _ capi.GetDisplayHandlerHandler = (*BrowserWindowStd)(nil)
-
-	// capi.CLoadHandlerT
-	var _ capi.OnLoadingStateChangeHandler = (*BrowserWindowStd)(nil)
+	var _ capi.GetLifeSpanHandlerHandler = bw
+	var _ capi.CClientTGetLoadHandlerHandler = bw
+	var _ capi.GetRequestHandlerHandler = bw
+	var _ capi.GetDisplayHandlerHandler = bw
 
 	// capi.CLifeSpanHandlerT
-	var _ capi.OnBeforeCloseHandler = (*BrowserWindowStd)(nil)
-	var _ capi.OnAfterCreatedHandler = (*BrowserWindowStd)(nil)
-	var _ capi.DoCloseHandler = (*BrowserWindowStd)(nil)
-	var _ capi.OnBeforePopupHandler = (*BrowserWindowStd)(nil)
+	var _ capi.OnBeforeCloseHandler = bw
+	var _ capi.OnAfterCreatedHandler = bw
+	var _ capi.DoCloseHandler = bw
+	var _ capi.OnBeforePopupHandler = bw
+
+	// capi.CLoadHandlerT
+	var _ capi.OnLoadingStateChangeHandler = bw
 
 	// capi.CRequestHandlerT
-	var _ capi.CRequestHandlerTGetResourceRequestHandlerHandler = (*BrowserWindowStd)(nil)
-	var _ capi.OnOpenUrlfromTabHandler = (*BrowserWindowStd)(nil)
-
-	// capi.CResourceRequestHandlerT
-	var _ capi.OnBeforeResourceLoadHandler = (*BrowserWindowStd)(nil)
-	var _ capi.GetResourceHandlerHandler = (*BrowserWindowStd)(nil)
+	var _ capi.CRequestHandlerTGetResourceRequestHandlerHandler = bw
+	var _ capi.OnOpenUrlfromTabHandler = bw
 
 	// capi.CDisplayHandlerT
-	var _ capi.OnAddressChangeHandler = (*BrowserWindowStd)(nil)
-
+	var _ capi.OnAddressChangeHandler = bw
 }
 
 func (bw *BrowserWindowStd) OnLoadingStateChange(
@@ -134,7 +127,7 @@ func (bw *BrowserWindowStd) DoClose(
 
 	bw.is_closing_ = true
 	bw.rootWin_.OnBrowserWindowClosing()
-	
+
 	return false
 }
 
@@ -200,6 +193,10 @@ func (bw *BrowserWindowStd) GetCBrowserT() *capi.CBrowserT {
 	return bw.browser_
 }
 
+func (bw *BrowserWindowStd) GetResourceManager() *ResourceManager {
+	return &bw.resourceManager
+}
+
 func (bw *BrowserWindowStd) OnBrowserClosed(browser *capi.CBrowserT) {
 	bw.rootWin_.OnBrowserWindowDestroyed()
 	bw.GetCClientT().UnbindAll()
@@ -207,6 +204,7 @@ func (bw *BrowserWindowStd) OnBrowserClosed(browser *capi.CBrowserT) {
 	bw.GetCLoadHandlerT().UnbindAll()
 	bw.GetCRequestHandlerT().UnbindAll()
 	bw.GetCDisplayHandlerT().UnbindAll()
+	bw.resourceManager.GetCResourceRequestHandlerT().UnbindAll()
 }
 
 func (bw *BrowserWindowStd) CreateBrowser(
@@ -226,7 +224,7 @@ func (bw *BrowserWindowStd) CreateBrowser(
 	windowInfo.SetStyle(win32const.WsChild | win32const.WsClipchildren | win32const.WsClipsiblings | win32const.WsTabstop | win32const.WsVisible)
 
 	if exStyle, err := win32api.GetWindowLongPtr(parentHwnd, win32const.GwlExstyle); err == nil {
-		if exStyle & win32const.WsExNoactivate != 0 {
+		if exStyle&win32const.WsExNoactivate != 0 {
 			windowInfo.SetExStyle(windowInfo.ExStyle() | win32const.WsExNoactivate)
 		}
 	}
@@ -248,7 +246,7 @@ func (bw *BrowserWindowStd) SetFocus(focus bool) {
 }
 
 func (bw *BrowserWindowStd) Hide() {
-	hwnd := bw.GetWindowHandle()
+	hwnd := GetWindowHandle(bw.GetCBrowserT())
 	if hwnd != 0 {
 		win32api.SetWindowPos(hwnd, 0, 0, 0, 0, 0,
 			win32const.SwpNozorder|win32const.SwpNomove|win32const.SwpNoactivate)
@@ -257,22 +255,29 @@ func (bw *BrowserWindowStd) Hide() {
 }
 
 func (bw *BrowserWindowStd) Show() {
-	hwnd := bw.GetWindowHandle()
+	hwnd := GetWindowHandle(bw.GetCBrowserT())
 	if hwnd != 0 && !win32api.IsWindowVisible(hwnd) {
 		win32api.ShowWindow(hwnd, win32const.SwShow)
 	}
 }
 
-func (bw *BrowserWindowStd) GetWindowHandle() win32api.HWND {
-	if bw.browser_ != nil {
-		h := bw.browser_.GetHost().GetWindowHandle()
+func GetWindowHandle(browser *capi.CBrowserT) win32api.HWND {
+	if browser != nil {
+		h := browser.GetHost().GetWindowHandle()
 		return win32api.HWND(capi.ToHandle(h))
 	}
 	return 0
 }
 
-func (bw *BrowserWindowStd) SetBound(x, y int, width, height uint32) {
-	hwnd := bw.GetWindowHandle()
+func SetBounds(browser *capi.CBrowserT, x, y int, width, height uint32) {
+	if !capi.CurrentlyOn(capi.TidUi) {
+		task := cef.NewTask(cef.TaskFunc(func() {
+			SetBounds(browser, x, y, width, height)
+		}))
+		capi.PostTask(capi.TidUi, task)
+	}
+
+	hwnd := GetWindowHandle(browser)
 	if hwnd != 0 {
 		win32api.SetWindowPos(hwnd, 0, x, y, int(width), int(height), win32const.SwpNozorder)
 	}
@@ -291,7 +296,7 @@ func (bw *BrowserWindowStd) GetResourceRequestHandler(
 	is_download int,
 	request_initiator string,
 ) (*capi.CResourceRequestHandlerT, bool) {
-	return bw.GetCResourceRequestHandlerT(), false
+	return bw.resourceManager.GetCResourceRequestHandlerT(), false
 }
 
 func (bw *BrowserWindowStd) OnOpenUrlfromTab(
@@ -319,7 +324,7 @@ func (bw *BrowserWindowStd) OnOpenUrlfromTab(
 	return false
 }
 
-func (bw *BrowserWindowStd) OnBeforeResourceLoad(
+func (rm *ResourceManager) OnBeforeResourceLoad(
 	self *capi.CResourceRequestHandlerT,
 	browser *capi.CBrowserT,
 	frame *capi.CFrameT,
@@ -328,7 +333,7 @@ func (bw *BrowserWindowStd) OnBeforeResourceLoad(
 ) (ret capi.CReturnValueT) {
 	// log.Println("T306:", request.GetUrl(), request.GetIdentifier())
 	if request.GetUrl() == kTestOrigin+kTestRequestPage {
-		bw.resourceManager.AddStreamResource(request)
+		rm.AddStreamResource(request)
 	}
 	return capi.RvContinue
 }
@@ -339,7 +344,7 @@ const kTestGetTextPage = "get_text.html"
 const kTestRequestPage = "request.html"
 const kTestPluginInfoPage = "plugin_info.html"
 
-func (bw *BrowserWindowStd) GetResourceHandler(
+func (rm *ResourceManager) GetResourceHandler(
 	self *capi.CResourceRequestHandlerT,
 	browser *capi.CBrowserT,
 	frame *capi.CFrameT,
@@ -347,18 +352,26 @@ func (bw *BrowserWindowStd) GetResourceHandler(
 ) (handler *capi.CResourceHandlerT) {
 	// log.Println("T308:", request.GetUrl(), request.GetIdentifier())
 
-	if rh, ok := bw.resourceManager.rh[request.GetUrl()]; ok {
+	if rh, ok := rm.rh[request.GetUrl()]; ok {
 		handler = rh
 	}
 	return handler
 }
 
-func (bw *BrowserWindowStd) SetDeviceScaleFactor(device_sclae_factor float32) {
+func (bw *BrowserWindowStd) SetDeviceScaleFactor(device_scale_factor float32) {
 	return
 }
 
 type ResourceManager struct {
 	rh map[string]*capi.CResourceHandlerT
+	capi.RefToCResourceRequestHandlerT
+}
+
+func init() {
+	// capi.CResourceRequestHandlerT
+	var _ capi.OnBeforeResourceLoadHandler = (*ResourceManager)(nil)
+	var _ capi.GetResourceHandlerHandler = (*ResourceManager)(nil)
+
 }
 
 func (rm *ResourceManager) AddStringResource(url, mime, content string) {
@@ -559,16 +572,18 @@ func (rm *StreamResourceHandler) Read(
 	return bytes_read > 0, bytes_read
 }
 
-func (bw *BrowserWindowStd) GetSource() {
+func GetSource(bw BrowserWindow) {
+	browser := bw.GetCBrowserT()
+	rm := bw.GetResourceManager()
 	url := kTestOrigin + kTestGetSourcePage
 	mySv := myStringVisitor{
 		f: func(c string) {
-			bw.resourceManager.AddStringResource(url, "text/html", c)
-			bw.browser_.GetMainFrame().LoadUrl(url)
+			rm.AddStringResource(url, "text/html", c)
+			browser.GetMainFrame().LoadUrl(url)
 		},
 	}
 	sv := capi.AllocCStringVisitorT().Bind(&mySv)
-	bw.browser_.GetMainFrame().GetSource(sv)
+	browser.GetMainFrame().GetSource(sv)
 }
 
 type myStringVisitor struct {
@@ -588,16 +603,18 @@ func (sv *myStringVisitor) Visit(self *capi.CStringVisitorT, cstring string) {
 	sv.f(ss)
 }
 
-func (bw *BrowserWindowStd) GetText() {
+func GetText(bw BrowserWindow) {
+	browser := bw.GetCBrowserT()
+	rm := bw.GetResourceManager()
 	url := kTestOrigin + kTestGetTextPage
 	mySv := myStringVisitor{
 		f: func(c string) {
-			bw.resourceManager.AddStringResource(url, "text/html", c)
-			bw.browser_.GetMainFrame().LoadUrl(url)
+			rm.AddStringResource(url, "text/html", c)
+			browser.GetMainFrame().LoadUrl(url)
 		},
 	}
 	sv := capi.AllocCStringVisitorT().Bind(&mySv)
-	bw.browser_.GetMainFrame().GetText(sv)
+	browser.GetMainFrame().GetText(sv)
 }
 
 func (bw *BrowserWindowStd) OnAddressChange(
@@ -617,7 +634,8 @@ func (bw *BrowserWindowStd) OnAddressChange(
 type myPluginInfoVisitor struct {
 	// capi.RefToCWebPluginInfoVisitorT
 	html    string
-	browser *BrowserWindowStd
+	browser *capi.CBrowserT
+	rm      *ResourceManager
 }
 
 func init() {
@@ -642,18 +660,19 @@ func (v *myPluginInfoVisitor) Visit(
 	if count+1 >= total {
 		v.html += "\n</body></html>"
 		url := kTestOrigin + kTestPluginInfoPage
-		v.browser.resourceManager.AddStringResource(url, "text/html", v.html)
-		v.browser.GetCBrowserT().GetMainFrame().LoadUrl(url)
+		v.rm.AddStringResource(url, "text/html", v.html)
+		v.browser.GetMainFrame().LoadUrl(url)
 	}
 	return true
 }
 
-func (bw *BrowserWindowStd) GetPlugInInfoVisitor() *capi.CWebPluginInfoVisitorT {
+func GetPlugInInfoVisitor(browser *capi.CBrowserT, rm *ResourceManager) *capi.CWebPluginInfoVisitorT {
 	visitor := &myPluginInfoVisitor{}
 	visitor.html = "<html><head><title>Plugin Info Test</title></head>" +
 		"<body bgcolor=\"white\">" +
 		"\n<b>Installed plugins:</b>"
-	visitor.browser = bw
+	visitor.browser = browser
+	visitor.rm = rm
 
 	return capi.AllocCWebPluginInfoVisitorT().Bind(visitor)
 }

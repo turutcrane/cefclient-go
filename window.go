@@ -60,18 +60,16 @@ func (wm *WindowManager) GetTempWindow() win32api.HWND {
 	wndClass.WndProc = win32api.WndProcToWNDPROC(win32api.DefWindowProc)
 	wndClass.Instance = win32api.HINSTANCE(hInstance)
 	wndClass.ClassName = syscall.StringToUTF16Ptr(kWndClass)
-	if win32api.RegisterClassEx(&wndClass) == 0 {
-		log.Panicln("T60: Can not Register Class", kWndClass)
+	if _, err := win32api.RegisterClassEx(&wndClass); err != nil {
+		log.Panicln("T60: Can not Register Class", kWndClass, err)
 	}
-	hwnd, err := win32api.CreateWindowEx(0,
+	if wm.temp_window_, err = win32api.CreateWindowEx(0,
 		syscall.StringToUTF16Ptr(kWndClass), nil,
 		win32const.WsOverlappedwindow|win32const.WsClipchildren,
 		0, 0, 1, 1, 0, 0, win32api.HINSTANCE(hInstance), 0,
-	)
-	if err != nil {
+	); err != nil {
 		log.Panicln("T69: Failed to CreateWindowsEx", err)
 	}
-	wm.temp_window_ = hwnd
 	return wm.temp_window_
 }
 
@@ -137,15 +135,19 @@ func (wm *WindowManager) CloseAllWindows(force bool) {
 }
 
 func (wm *WindowManager) SetBrowserWindowOsr(hwnd win32api.HWND, browserWindowOsr *BrowserWindowOsr) {
-	wm.rootWindowMap.Store(hwnd, browserWindowOsr)
+	wm.browserWindowOsrMap.Store(hwnd, browserWindowOsr)
 }
 
 func (wm *WindowManager) GetBrowserWindowOsr(hwnd win32api.HWND) (browserWindowOsr *BrowserWindowOsr, exist bool) {
-	if r, ok := wm.rootWindowMap.Load(hwnd); ok {
+	if r, ok := wm.browserWindowOsrMap.Load(hwnd); ok {
 		browserWindowOsr = r.(*BrowserWindowOsr)
 		exist = ok
 	}
 	return browserWindowOsr, exist
+}
+
+func (wm *WindowManager) RemoveBrowserWindowOsr(hwnd win32api.HWND) {
+	wm.browserWindowOsrMap.Delete(hwnd)
 }
 
 func (wm *WindowManager) GetActiveBrowser() *capi.CBrowserT {
@@ -208,26 +210,6 @@ func RGB(r, g, b uint32) win32api.COLORREF {
 	return win32api.COLORREF(r | g<<8 | b<<16)
 }
 
-func CefColorSetARGB(a, r, g, b int) capi.CColorT {
-	return capi.CColorT(a<<24 | r<<16 | g<<8 | b)
-}
-
-func CefColorGetA(c capi.CColorT) uint32 {
-	return (uint32(c) >> 24) & 0xff
-}
-
-func CefColorGetR(c capi.CColorT) uint32 {
-	return (uint32(c) >> 16) & 0xff
-}
-
-func CefColorGetG(c capi.CColorT) uint32 {
-	return (uint32(c) >> 8) & 0xff
-}
-
-func CefColorGetB(c capi.CColorT) uint32 {
-	return uint32(c) & 0xff
-}
-
 var class_regsitered bool
 
 func RegisterRootClass(hInstance win32api.HINSTANCE, window_class string, background_brush win32api.HBRUSH) {
@@ -262,13 +244,14 @@ func RegisterRootClass(hInstance win32api.HINSTANCE, window_class string, backgr
 		ClassName:  syscall.StringToUTF16Ptr(window_class),
 		IconSm:     iconSm,
 	}
-	if win32api.RegisterClassEx(&wndClass) == 0 {
-		log.Panicln("T109: Can not Register Class", window_class)
+	if _, err := win32api.RegisterClassEx(&wndClass); err != nil {
+		log.Panicln("T109: Can not Register Class", window_class, err)
 	}
-	return 
+	return
 }
 
 var class_regsitered_osr bool
+
 func RegisterOsrClass(hInstance win32api.HINSTANCE, window_class string, background_brush win32api.HBRUSH) {
 	if class_regsitered_osr {
 		return
@@ -297,8 +280,8 @@ func RegisterOsrClass(hInstance win32api.HINSTANCE, window_class string, backgro
 		ClassName:  syscall.StringToUTF16Ptr(window_class),
 		IconSm:     iconSm,
 	}
-	if win32api.RegisterClassEx(&wndClass) == 0 {
-		log.Panicln("T109: Can not Register Class", window_class)
+	if _, err := win32api.RegisterClassEx(&wndClass); err != nil {
+		log.Panicln("T109: Can not Register Class", window_class, err)
 	}
 }
 
@@ -332,14 +315,28 @@ const (
 
 func GetWindowScaleFactor(hwnd win32api.HWND) float32 {
 	if hwnd != 0 && IsProcessPerMonitorDpiAware() {
-		return float32(win32api.GetDpiForWindow(hwnd)) / DPI_1X
+		dpi := win32api.GetDpiForWindow(hwnd)
+		// log.Println("T335: DpiAwar:", dpi)
+		return float32(dpi) / DPI_1X
 	}
+
 	return GetDeviceScaleFactor()
 }
 
 func LogicalToDevice(value int, device_scale_factor float32) int {
 	scaled_val := float32(value) * device_scale_factor
 	return int(math.Floor(float64(scaled_val)))
+}
+
+func DeviceToLogical(value int, device_scale_factor float32) int {
+	scaled_val := float32(value) / device_scale_factor
+	return int(math.Floor(float64(scaled_val)))
+}
+
+func DeviceToLogicalMouseEvent(event capi.CMouseEventT, device_scale_factor float32) capi.CMouseEventT {
+	event.SetX(DeviceToLogical(event.X(), device_scale_factor))
+	event.SetY(DeviceToLogical(event.Y(), device_scale_factor))
+	return event
 }
 
 var scale_factor float32 = 1.0
@@ -368,4 +365,117 @@ func SetWndProc(hWnd win32api.HWND, wndProc win32api.WndProc) win32api.WNDPROC {
 		log.Panicln("T383:", err)
 	}
 	return win32api.WNDPROC(v)
+}
+
+func IsKeyDown(wparam int) bool {
+	return (uint32(win32api.GetKeyState(wparam)) & 0x8000) != 0
+}
+
+func GetCefMouseModifiers(wparam win32api.WPARAM) (modifiers capi.CEventFlagsT) {
+	if (wparam & win32const.MkControl) != 0 {
+		modifiers |= capi.EventflagControlDown
+	}
+	if (wparam & win32const.MkShift) != 0 {
+		modifiers |= capi.EventflagShiftDown
+	}
+	if IsKeyDown(win32const.VkMenu) {
+		modifiers |= capi.EventflagAltDown
+	}
+	if (wparam & win32const.MkLbutton) != 0 {
+		modifiers |= capi.EventflagLeftMouseButton
+	}
+	if (wparam & win32const.MkMbutton) != 0 {
+		modifiers |= capi.EventflagMiddleMouseButton
+	}
+	if (wparam & win32const.MkRbutton) != 0 {
+		modifiers |= capi.EventflagRightMouseButton
+	}
+
+	// Low bit set from GetKeyState indicates "toggled".
+	if (win32api.GetKeyState(win32const.VkNumlock) & 1) != 0 {
+		modifiers |= capi.EventflagNumLockOn
+	}
+	if (win32api.GetKeyState(win32const.VkCapital) & 1) != 0 {
+		modifiers |= capi.EventflagCapsLockOn
+	}
+	return modifiers
+}
+
+func GetCefKeyboardModifiers(wparam win32api.WPARAM, lparam win32api.LPARAM) (modifiers capi.CEventFlagsT) {
+	if IsKeyDown(win32const.VkShift) {
+		modifiers |= capi.EventflagShiftDown
+	}
+	if IsKeyDown(win32const.VkControl) {
+		modifiers |= capi.EventflagControlDown
+	}
+	if IsKeyDown(win32const.VkMenu) {
+		modifiers |= capi.EventflagAltDown
+	}
+
+	// Low bit set from GetKeyState indicates "toggled".
+	if (win32api.GetKeyState(win32const.VkNumlock) & 1) != 0 {
+		modifiers |= capi.EventflagNumLockOn
+	}
+	if (win32api.GetKeyState(win32const.VkCapital) & 1) != 0 {
+		modifiers |= capi.EventflagCapsLockOn
+	}
+
+	switch wparam {
+	case win32const.VkReturn:
+		if ((lparam >> 16) & win32const.KfExtended) != 0 {
+			modifiers |= capi.EventflagIsKeyPad
+		}
+
+	case win32const.VkInsert, win32const.VkDelete, win32const.VkHome, win32const.VkEnd,
+		win32const.VkPrior, win32const.VkNext, win32const.VkUp, win32const.VkDown, win32const.VkLeft, win32const.VkRight:
+		if ((lparam >> 16) & win32const.KfExtended) == 0 {
+			modifiers |= capi.EventflagIsKeyPad
+		}
+
+	case win32const.VkNumlock, win32const.VkNumpad0, win32const.VkNumpad1, win32const.VkNumpad2, win32const.VkNumpad3,
+		win32const.VkNumpad4, win32const.VkNumpad5, win32const.VkNumpad6, win32const.VkNumpad7,
+		win32const.VkNumpad8, win32const.VkNumpad9,
+		win32const.VkDivide, win32const.VkMultiply, win32const.VkSubtract, win32const.VkAdd,
+		win32const.VkDecimal, win32const.VkClear:
+		modifiers |= capi.EventflagIsKeyPad
+
+	case win32const.VkShift:
+		if IsKeyDown(win32const.VkLshift) {
+			modifiers |= capi.EventflagIsLeft
+		} else if IsKeyDown(win32const.VkRshift) {
+			modifiers |= capi.EventflagIsRight
+		}
+
+	case win32const.VkControl:
+		if IsKeyDown(win32const.VkLcontrol) {
+			modifiers |= capi.EventflagIsLeft
+		} else if IsKeyDown(win32const.VkRcontrol) {
+			modifiers |= capi.EventflagIsRight
+		}
+
+	case win32const.VkMenu:
+		if IsKeyDown(win32const.VkLmenu) {
+			modifiers |= capi.EventflagIsLeft
+		} else if IsKeyDown(win32const.VkRmenu) {
+			modifiers |= capi.EventflagIsRight
+		}
+
+	case win32const.VkLwin:
+		modifiers |= capi.EventflagIsLeft
+
+	case win32const.VkRwin:
+		modifiers |= capi.EventflagIsRight
+	}
+	return modifiers
+}
+
+var qi_freq win32api.LARGE_INTEGER
+
+func GetTimeNow() uint64 {
+	if qi_freq == 0 {
+		win32api.QueryPerformanceFrequency(&qi_freq)
+	}
+	var t win32api.LARGE_INTEGER
+	win32api.QueryPerformanceCounter(&t)
+	return uint64(float64(t) / float64(qi_freq) * 1000000)
 }

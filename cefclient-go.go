@@ -20,7 +20,7 @@ type ClientConfig struct {
 	// RootWindowConfig
 	always_on_top bool
 	with_controls bool
-	no_activate bool
+	no_activate   bool
 
 	// Off screen rendering options
 	use_windowless_rendering     bool
@@ -70,17 +70,18 @@ func main() {
 
 	// browser_process_handler.initial_url = flag.String("url", "https://www.golang.org/", "URL")
 	flag.StringVar(&mainConfig.main_url, "url", "https://www.golang.org/", "URL")
-	flag.BoolVar(&mainConfig.use_windowless_rendering, "osr", false, "with Off Screen Rendering")
+	flag.BoolVar(&mainConfig.use_windowless_rendering, "off-screen-rendering-enabled", false, "with Off Screen Rendering")
 	flag.BoolVar(&mainConfig.always_on_top, "always-on-top", false, "always-on-top")
 	flag.BoolVar(&mainConfig.no_activate, "no-activate", false, "no-ctivate")
 	flag.BoolVar(&mainConfig.with_controls, "with-controls", true, "invert hide-controls")
 	flag.BoolVar(&mainConfig.show_update_rect, "show-update-rect", false, "show update rect on OSR mode")
 	flag.IntVar(&mainConfig.windowless_frame_rate, "off-screen-frame-rate", 30, "Off screen frame rate")
 	background_color_name := flag.String("background-color", "", "off-scren-frame window background color")
+	flag.BoolVar(&mainConfig.external_begin_frame_enabled, "external-begin-frame-enabled", false, "external-begin-frame-enabled")
 	flag.Parse() // should be after cef.ExecuteProcess() or implement CComandLine
 	background_color := parseColor(*background_color_name)
 	if background_color == 0 && !mainConfig.use_views {
-		background_color = CefColorSetARGB(255, 255, 255, 255)
+		background_color = capi.ColorSetARGB(255, 255, 255, 255)
 	}
 	mainConfig.background_color = background_color
 
@@ -89,6 +90,9 @@ func main() {
 	s.SetNoSandbox(true)
 	s.SetMultiThreadedMessageLoop(false)
 	s.SetRemoteDebuggingPort(8088)
+	if mainConfig.use_windowless_rendering {
+		s.SetWindowlessRenderingEnabled(true)
+	}
 
 	cef.Initialize(mainArgs, s, app.GetCAppT())
 	runtime.UnlockOSThread()
@@ -126,15 +130,15 @@ func (app *myApp) GetBrowserProcessHandler(self *capi.CAppT) *capi.CBrowserProce
 func parseColor(color string) capi.CColorT {
 	switch strings.ToLower(color) {
 	case "black":
-		return CefColorSetARGB(255, 0, 0, 0)
+		return capi.ColorSetARGB(255, 0, 0, 0)
 	case "blue":
-		return CefColorSetARGB(255, 0, 0, 255)
+		return capi.ColorSetARGB(255, 0, 0, 255)
 	case "green":
-		return CefColorSetARGB(255, 0, 255, 0)
+		return capi.ColorSetARGB(255, 0, 255, 0)
 	case "red":
-		return CefColorSetARGB(255, 255, 0, 0)
+		return capi.ColorSetARGB(255, 255, 0, 0)
 	case "white":
-		return CefColorSetARGB(255,255, 255, 255)
+		return capi.ColorSetARGB(255, 255, 255, 255)
 	}
 	return 0
 }
