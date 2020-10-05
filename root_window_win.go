@@ -73,7 +73,10 @@ type BrowserWindow interface {
 	Show()
 	IsClosing() bool
 	GetCBrowserT() *capi.CBrowserT
+	GetCClientT() *capi.CClientT
 	GetResourceManager() *ResourceManager
+	IsOsr() bool
+	ShowPopup(hwnd_ win32api.HWND, rect capi.CRectT)
 }
 
 func (rw *RootWindowWin) Init(
@@ -315,7 +318,6 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 	if err := win32api.GetClientRect(self.hwnd_, &rect); err != nil {
 		log.Panicln("T221: GetClientRect")
 	}
-	log.Printf("T155: OnCreate")
 
 	if self.with_controls_ {
 		// if (with_controls_) skip
@@ -402,6 +404,19 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 		windowManager.SetRootWin(self.edit_hwnd_, self)
 
 		rect.Top += win32api.LONG(urlbar_height)
+
+		if !self.with_osr_ {
+			if hMenu := win32api.GetMenu(self.hwnd_); hMenu != 0 {
+				if hTestMenu := win32api.GetSubMenu(hMenu, 2); hTestMenu != 0 {
+					if err := win32api.RemoveMenu(hTestMenu, IdTestsOsrFps, win32const.MfBycommand); err != nil {
+						log.Panicln("T410:", err)
+					}
+					if err := win32api.RemoveMenu(hTestMenu, IdTestsOsrDsf, win32const.MfBycommand); err != nil {
+						log.Panicln("T413:", err)
+					}
+				}
+			}
+		}
 	} else {
 		win32api.SetMenu(self.hwnd_, 0)
 	}
@@ -414,27 +429,9 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 	r.SetY(int(rect.Top))
 	r.SetWidth(int(rect.Right - rect.Left))
 	r.SetHeight(int(rect.Bottom - rect.Top))
+
 	if self.is_popup_ {
-		bwHwnd := GetWindowHandle(self.browser_window_.GetCBrowserT())
-		if bwHwnd != 0 {
-			if _, err := win32api.SetParent(bwHwnd, self.hwnd_); err != nil {
-				log.Panicln("T368:", err)
-			}
-			if err := win32api.SetWindowPos(bwHwnd, 0,
-				int(rect.Left), int(rect.Top), int(rect.Right-rect.Left), int(rect.Bottom-rect.Top),
-				win32const.SwpNozorder|win32const.SwpNoactivate); err != nil {
-				log.Panicln("T372:", err)
-			}
-			if exStyle, err := win32api.GetWindowLongPtr(self.hwnd_, win32const.GwlExstyle); err == nil {
-				swFlag := win32const.SwShow
-				if exStyle&win32const.WsExNoactivate != 0 {
-					swFlag = win32const.SwShownoactivate
-				}
-				win32api.ShowWindow(bwHwnd, swFlag)
-			} else {
-				log.Panicln("T372:", err)
-			}
-		}
+		self.browser_window_.ShowPopup(self.hwnd_, r)
 	} else {
 		self.browser_window_.CreateBrowser(self.initial_url, self.hwnd_, r, self.browser_settings_, nil, nil) // delegate が PDF extension を許可している)
 	}
@@ -478,7 +475,6 @@ func (self *RootWindowWin) OnSize(minimized bool) {
 		button_width := GetButtonWidth(self.hwnd_)
 		urlbar_height := GetURLBarHeight(self.hwnd_)
 		font_height := LogicalToDevice(14, GetWindowScaleFactor(self.hwnd_))
-		log.Println("T482:,", font_height, self.font_height_)
 
 		if font_height != self.font_height_ {
 			self.font_height_ = font_height
@@ -606,6 +602,7 @@ func (self *RootWindowWin) OnClose() bool {
 			return true
 		}
 	}
+
 	return false
 }
 

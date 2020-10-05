@@ -16,7 +16,6 @@ type BrowserWindowStd struct {
 	rootWin_        *RootWindowWin
 	browser_        *capi.CBrowserT
 	is_closing_     bool
-	is_osr_         bool // これはいらないかも type assersion でいいかも。
 	resourceManager ResourceManager
 
 	capi.RefToCClientT
@@ -30,7 +29,6 @@ func NewBrowserWindowStd(rootWindow *RootWindowWin) *BrowserWindowStd {
 	bw := &BrowserWindowStd{}
 	bw.rootWin_ = rootWindow
 	bw.resourceManager.rh = map[string]*capi.CResourceHandlerT{}
-	bw.is_osr_ = rootWindow.with_osr_
 
 	capi.AllocCLifeSpanHandlerT().Bind(bw)
 	capi.AllocCClientT().Bind(bw)
@@ -101,9 +99,8 @@ func (bw *BrowserWindowStd) GetDisplayHandler(*capi.CClientT) *capi.CDisplayHand
 
 func (bw *BrowserWindowStd) OnBeforeClose(self *capi.CLifeSpanHandlerT, browser *capi.CBrowserT) {
 	// capi.QuitMessageLoop()
-
+	log.Println("T104:")
 	bw.OnBrowserClosed(browser)
-
 }
 
 func (bw *BrowserWindowStd) OnAfterCreated(
@@ -152,7 +149,24 @@ func (origin *BrowserWindowStd) OnBeforePopup(
 	extra_info *capi.CDictionaryValueT,
 	no_javascript_accessOut bool,
 ) {
+	return OnBeforePopup(origin, target_url, popupFeatures, windowInfo, settings, no_javascript_access)
+}
 
+func OnBeforePopup(
+	origin BrowserWindow,
+	target_url string,
+	popupFeatures *capi.CPopupFeaturesT,
+	windowInfo capi.CWindowInfoT,
+	settings capi.CBrowserSettingsT,
+	no_javascript_access bool,
+) (
+	ret bool,
+	windowInfoOut capi.CWindowInfoT,
+	clientOut *capi.CClientT,
+	settingsOut capi.CBrowserSettingsT,
+	extra_info *capi.CDictionaryValueT,
+	no_javascript_accessOut bool,
+) {
 	settingsOut = settings
 	rect := win32api.Rect{}
 	if popupFeatures.XSet() {
@@ -170,16 +184,23 @@ func (origin *BrowserWindowStd) OnBeforePopup(
 
 	config := mainConfig
 	config.main_url = target_url
-	config.use_windowless_rendering = origin.is_osr_
+	config.use_windowless_rendering = origin.IsOsr()
 	rw := windowManager.CreateRootWindow(config, true, rect, &settingsOut)
 
 	ret = false
-	clientOut = rw.browser_window_.(*BrowserWindowStd).GetCClientT()
+	clientOut = rw.browser_window_.GetCClientT()
 	windowInfoOut = windowInfo
 
 	temp_hwnd_ := windowManager.GetTempWindow()
-
-	windowInfoOut.SetParentWindow(capi.ToCWindowHandleT(syscall.Handle(temp_hwnd_)))
+	if origin.IsOsr() {
+		windowInfoOut.SetWindowlessRenderingEnabled(true)
+		bwo := origin.(*BrowserWindowOsr)
+		log.Println("T201:", windowInfoOut.ExternalBeginFrameEnabled())
+		windowInfoOut.SetExternalBeginFrameEnabled(bwo.external_begin_frame_enabled)
+		windowInfoOut.SetParentWindow(capi.ToCWindowHandleT(syscall.Handle(temp_hwnd_)))
+	} else {
+		windowInfoOut.SetParentWindow(capi.ToCWindowHandleT(syscall.Handle(temp_hwnd_)))
+	}
 	windowInfoOut.SetStyle(
 		win32const.WsChild | win32const.WsClipchildren |
 			win32const.WsClipsiblings | win32const.WsTabstop | win32const.WsVisible)
@@ -187,10 +208,15 @@ func (origin *BrowserWindowStd) OnBeforePopup(
 	windowInfoOut.SetExStyle(exStyle | win32const.WsExNoactivate)
 
 	return ret, windowInfoOut, clientOut, settingsOut, extra_info, no_javascript_access
+
 }
 
 func (bw *BrowserWindowStd) GetCBrowserT() *capi.CBrowserT {
 	return bw.browser_
+}
+
+func (bw *BrowserWindowStd) IsOsr() bool {
+	return false
 }
 
 func (bw *BrowserWindowStd) GetResourceManager() *ResourceManager {
@@ -275,6 +301,7 @@ func SetBounds(browser *capi.CBrowserT, x, y int, width, height uint32) {
 			SetBounds(browser, x, y, width, height)
 		}))
 		capi.PostTask(capi.TidUi, task)
+		return
 	}
 
 	hwnd := GetWindowHandle(browser)
@@ -314,7 +341,7 @@ func (bw *BrowserWindowStd) OnOpenUrlfromTab(
 		browserSettings := capi.NewCBrowserSettingsT()
 		config := mainConfig
 		config.main_url = target_url
-		config.use_windowless_rendering = bw.is_osr_
+		config.use_windowless_rendering = bw.IsOsr()
 		windowManager.CreateRootWindow(
 			config, false, rect, browserSettings,
 		)
@@ -675,4 +702,27 @@ func GetPlugInInfoVisitor(browser *capi.CBrowserT, rm *ResourceManager) *capi.CW
 	visitor.rm = rm
 
 	return capi.AllocCWebPluginInfoVisitorT().Bind(visitor)
+}
+
+func (bw *BrowserWindowStd) ShowPopup(hwnd_ win32api.HWND, rect capi.CRectT) {
+	bwHwnd := GetWindowHandle(bw.GetCBrowserT())
+	if bwHwnd != 0 {
+		if _, err := win32api.SetParent(bwHwnd, hwnd_); err != nil {
+			log.Panicln("T368:", err)
+		}
+		if err := win32api.SetWindowPos(bwHwnd, 0,
+			rect.X(), rect.Y(), rect.Width(), rect.Height(),
+			win32const.SwpNozorder|win32const.SwpNoactivate); err != nil {
+			log.Panicln("T372:", err)
+		}
+		if exStyle, err := win32api.GetWindowLongPtr(hwnd_, win32const.GwlExstyle); err == nil {
+			swFlag := win32const.SwShow
+			if exStyle&win32const.WsExNoactivate != 0 {
+				swFlag = win32const.SwShownoactivate
+			}
+			win32api.ShowWindow(bwHwnd, swFlag)
+		} else {
+			log.Panicln("T372:", err)
+		}
+	}
 }

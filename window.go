@@ -172,8 +172,6 @@ func (wm *WindowManager) OnRootWindowActivated(root_window *RootWindowWin) {
 }
 
 func (wm *WindowManager) OnRootWindowDestroyed(root_window *RootWindowWin) {
-	// log.Println("T118:", "OnBeforeClose: QuitMessageLoop")
-
 	if root_window.edit_hwnd_ != 0 {
 		wm.RemoveRootWin(root_window.edit_hwnd_)
 	}

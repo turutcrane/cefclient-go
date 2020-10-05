@@ -15,7 +15,6 @@ type BrowserWindowOsr struct {
 	rootWin_             *RootWindowWin
 	browser_             *capi.CBrowserT
 	is_closing_          bool
-	is_osr_              bool // これはいらないかも type assersion でいいかも。
 	hidden_              bool
 	device_scale_factor_ float32
 	renderer_            *OsrRenderer
@@ -53,6 +52,14 @@ type BrowserWindowOsr struct {
 	capi.RefToCRenderHandlerT
 }
 
+type nullCClientT struct{}
+
+func (*nullCClientT) GetRenderHandler(self *capi.CClientT) (ret *capi.CRenderHandlerT) {
+	log.Println("T58: GetRenderHandler: return dummy RenderHandler")
+	rh := capi.AllocCRenderHandlerT() // has no hander routine
+	return rh
+}
+
 func init() {
 	var bwo *BrowserWindowOsr
 	// capi.CClientT
@@ -61,12 +68,13 @@ func init() {
 	var _ capi.GetRequestHandlerHandler = bwo
 	var _ capi.GetDisplayHandlerHandler = bwo
 	var _ capi.GetRenderHandlerHandler = bwo
+	var _ capi.GetRenderHandlerHandler = (*nullCClientT)(nil)
 
 	// capi.CLifeSpanHandlerT
-	var _ capi.OnBeforeCloseHandler = bwo
-	var _ capi.OnAfterCreatedHandler = bwo
 	var _ capi.DoCloseHandler = bwo
-	// var _ capi.OnBeforePopupHandler = bwo
+	var _ capi.OnAfterCreatedHandler = bwo
+	var _ capi.OnBeforeCloseHandler = bwo
+	var _ capi.OnBeforePopupHandler = bwo
 
 	// capi.CLoadHandlerT
 	var _ capi.OnLoadingStateChangeHandler = bwo
@@ -96,7 +104,6 @@ func NewBrowserWindowOsr(
 	bwo := &BrowserWindowOsr{}
 	bwo.rootWin_ = rootWindow
 	bwo.resourceManager.rh = map[string]*capi.CResourceHandlerT{}
-	bwo.is_osr_ = rootWindow.with_osr_ // いらんのじゃね？
 
 	bwo.external_begin_frame_enabled = external_begin_frame_enabled
 	bwo.windowless_frame_rate = windowless_frame_rate
@@ -127,6 +134,10 @@ func (bwo *BrowserWindowOsr) CreateBrowser(
 	extra_info *capi.CDictionaryValueT,
 	request_context *capi.CRequestContextT,
 ) {
+	if !capi.CurrentlyOn(capi.TidUi) {
+		log.Panicln("T132: Not on TidUi")
+	}
+
 	bwo.Create(parentHwnd, rect)
 
 	windowInfo := &capi.CWindowInfoT{}
@@ -157,7 +168,7 @@ func (bwo *BrowserWindowOsr) Create(
 
 	hInst, err := win32api.GetModuleHandle(nil)
 	if err != nil {
-		log.Panicln("T83:", err)
+		log.Panicln("T160:", err)
 	}
 	background_brush := win32api.CreateSolidBrush(
 		RGB(capi.ColorGetR(bwo.background_color),
@@ -180,7 +191,7 @@ func (bwo *BrowserWindowOsr) Create(
 			dwExStyle |= win32const.WsExNoactivate
 		}
 	}
-	log.Println("T148:", parent_hwnd, hInst, rect)
+
 	bwo.osr_hwnd_, err = win32api.CreateWindowEx(
 		dwExStyle,
 		syscall.StringToUTF16Ptr(window_class),
@@ -240,15 +251,16 @@ func (bwo *BrowserWindowOsr) GetDisplayHandler(*capi.CClientT) *capi.CDisplayHan
 }
 
 func (bwo *BrowserWindowOsr) GetRenderHandler(*capi.CClientT) *capi.CRenderHandlerT {
-	return bwo.GetCRenderHandlerT()
+	handler := bwo.GetCRenderHandlerT()
+	return handler
 }
 
 func (bwo *BrowserWindowOsr) OnBeforeClose(self *capi.CLifeSpanHandlerT, browser *capi.CBrowserT) {
+	log.Println("T255: OnBeforeClose")
 
-	// browser_ = nullptr;
 	// render_handler_->SetBrowser(nullptr);
-
 	// render_handler_.reset();
+	bwo.browser_ = nil
 
 	// Destroy the native window.
 	win32api.DestroyWindow(bwo.osr_hwnd_)
@@ -257,20 +269,25 @@ func (bwo *BrowserWindowOsr) OnBeforeClose(self *capi.CLifeSpanHandlerT, browser
 	bwo.osr_hwnd_ = 0
 
 	bwo.rootWin_.OnBrowserWindowDestroyed()
+	var nullClient *nullCClientT
+
 	bwo.GetCClientT().UnbindAll()
+	bwo.GetCClientT().Bind(nullClient) // nullClient returns dummy render handler
+
 	bwo.GetCLifeSpanHandlerT().UnbindAll()
 	bwo.GetCLoadHandlerT().UnbindAll()
 	bwo.GetCRequestHandlerT().UnbindAll()
 	bwo.GetCDisplayHandlerT().UnbindAll()
+	bwo.GetCRenderHandlerT().UnbindAll()
 	bwo.resourceManager.GetCResourceRequestHandlerT().UnbindAll()
+
+	log.Println("T267: OnBeforeClose(): End")
 }
 
 func (bwo *BrowserWindowOsr) OnAfterCreated(
 	self *capi.CLifeSpanHandlerT,
 	browser *capi.CBrowserT,
 ) {
-
-	log.Println("T195:", "OnAfterCreated")
 	if bwo.browser_ == nil {
 		bwo.browser_ = browser
 	} else {
@@ -287,6 +304,7 @@ func (bwo *BrowserWindowOsr) OnAfterCreated(
 		// Show the browser window. Called asynchronously so that the browser has
 		// time to create associated internal objects.
 		task := cef.NewTask(cef.TaskFunc(func() {
+			log.Println("T291: Task: bwo.Show()")
 			bwo.Show()
 		}))
 		capi.PostTask(capi.TidUi, task)
@@ -301,6 +319,7 @@ func (bwo *BrowserWindowOsr) Show() {
 			bwo.Show()
 		}))
 		capi.PostTask(capi.TidUi, task)
+		return
 	}
 	if bwo.browser_ == nil {
 		return
@@ -337,11 +356,12 @@ func (bwo *BrowserWindowOsr) DoClose(
 	self *capi.CLifeSpanHandlerT,
 	browser *capi.CBrowserT,
 ) bool {
-	log.Println("T83: DoClose")
+	log.Println("T365: DoClose")
 
 	bwo.is_closing_ = true
 	bwo.rootWin_.OnBrowserWindowClosing()
 
+	log.Println("T370: DoClose: End")
 	return false
 }
 
@@ -354,6 +374,7 @@ func (bwo *BrowserWindowOsr) GetResourceRequestHandler(
 	is_download int,
 	request_initiator string,
 ) (*capi.CResourceRequestHandlerT, bool) {
+	// log.Println("T369:", request.GetUrl())
 	return bwo.resourceManager.GetCResourceRequestHandlerT(), false
 }
 
@@ -380,6 +401,7 @@ func (bwo *BrowserWindowOsr) SetDeviceScaleFactor(device_scale_factor float32) {
 			bwo.SetDeviceScaleFactor(device_scale_factor)
 		}))
 		capi.PostTask(capi.TidUi, task)
+		return
 	}
 
 	if bwo.device_scale_factor_ == device_scale_factor {
@@ -398,6 +420,7 @@ func (bwo *BrowserWindowOsr) SetFocus(focus bool) {
 			bwo.SetFocus(focus)
 		}))
 		capi.PostTask(capi.TidUi, task)
+		return
 	}
 	if bwo.osr_hwnd_ != 0 && focus {
 		win32api.SetFocus(bwo.osr_hwnd_)
@@ -439,6 +462,7 @@ func OsrWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPARA
 		}
 
 	case win32const.WmNcdestroy:
+		log.Println("T446: Osr WmNcdestroy")
 		windowManager.RemoveBrowserWindowOsr(bwo.osr_hwnd_)
 		bwo.osr_hwnd_ = 0
 	}
@@ -741,7 +765,6 @@ func (bwo *BrowserWindowOsr) OnPaint(
 	width int,
 	height int,
 ) {
-
 	// OsrRenderHandlerWin::SetBrowser
 	bwo.browser_ = browser
 	if bwo.browser_ != nil && bwo.external_begin_frame_enabled {
@@ -751,6 +774,7 @@ func (bwo *BrowserWindowOsr) OnPaint(
 
 	if bwo.painting_popup_ {
 		bwo.renderer_.OnPaint(browser, ctype, dirtyRects, buffer, width, height)
+		return
 	}
 
 	if bwo.hdc_ == 0 {
@@ -934,4 +958,56 @@ func (bwo *BrowserWindowOsr) OnKeyEvent(message win32api.UINT, wParam win32api.W
 
 	bwo.browser_.GetHost().SendKeyEvent(&event)
 
+}
+
+func (origin *BrowserWindowOsr) OnBeforePopup(
+	self *capi.CLifeSpanHandlerT,
+	originBrowser *capi.CBrowserT,
+	originFrame *capi.CFrameT,
+	target_url string,
+	target_frame_name string,
+	target_disposition capi.CWindowOpenDispositionT,
+	user_gesture int,
+	popupFeatures *capi.CPopupFeaturesT,
+	windowInfo capi.CWindowInfoT,
+	client *capi.CClientT,
+	settings capi.CBrowserSettingsT,
+	no_javascript_access bool,
+) (
+	ret bool,
+	windowInfoOut capi.CWindowInfoT,
+	clientOut *capi.CClientT,
+	settingsOut capi.CBrowserSettingsT,
+	extra_info *capi.CDictionaryValueT,
+	no_javascript_accessOut bool,
+) {
+	return OnBeforePopup(origin, target_url, popupFeatures, windowInfo, settings, no_javascript_access)
+}
+
+func (bwo *BrowserWindowOsr) IsOsr() bool {
+	return true
+}
+
+func (bwo *BrowserWindowOsr) ShowPopup(parentHwnd win32api.HWND, rect capi.CRectT) {
+	if !capi.CurrentlyOn(capi.TidUi) {
+		task := cef.NewTask(cef.TaskFunc(func() {
+			bwo.ShowPopup(parentHwnd, rect)
+		}))
+		capi.PostTask(capi.TidUi, task)
+		return
+	}
+	log.Println("T975:", rect)
+	bwo.Create(parentHwnd, rect)
+
+	// render_handler_->SetBrowser(browser_);
+	if bwo.browser_ == nil {
+		log.Panicln("T979:")
+	}
+	if bwo.browser_ != nil && bwo.external_begin_frame_enabled {
+		// Start the BeginFrame timer.
+		bwo.Invalidate()
+	}
+
+	bwo.browser_.GetHost().WasResized()
+	bwo.Show()
 }

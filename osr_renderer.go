@@ -189,7 +189,6 @@ func (renderer *OsrRenderer) OnPaint(
 				dirtyRects[0] == rendererRect) {
 			// line := 50*width*4
 			// b := (*[1 << 30]byte)(buffer)[line:line+600]
-			log.Println("T184:", rendererRect)
 			gl.PixelStorei(gl.UNPACK_SKIP_PIXELS, 0)
 			glMust("T178:")
 
