@@ -38,12 +38,16 @@ github.com/turutcrane/cefingo v0.3.2 h1:4V41AsuTRoDxZwxHGcCDKBJRA8E2PvtU+tO2Yj7q
 github.com/turutcrane/cefingo v0.3.2/go.mod h1:v06TccfaKKReFWKkat13yV/LyL4rugEDKelHhhnez8E=
 github.com/turutcrane/cefingo v0.3.3 h1:dAI8RY22n5++Rz7QRzozdSxzKeVolQLL9E4EDLIOMmI=
 github.com/turutcrane/cefingo v0.3.3/go.mod h1:v06TccfaKKReFWKkat13yV/LyL4rugEDKelHhhnez8E=
+github.com/turutcrane/cefingo v0.3.4 h1:/l4vErgnNAMp2GeC79dbW0orVbm5NAd3AOLm6H9pgYo=
+github.com/turutcrane/cefingo v0.3.4/go.mod h1:v06TccfaKKReFWKkat13yV/LyL4rugEDKelHhhnez8E=
 github.com/turutcrane/win32api v0.0.0-20200525130019-e8ae9093fffa h1:bnVpLtemOyEdF8ai5xTS41fK6S7QQlQDlbdu9txo3Kw=
 github.com/turutcrane/win32api v0.0.0-20200525130019-e8ae9093fffa/go.mod h1:BeL/w3MUv2nKqI55DOZU8GJtdoOhn/H9IquPqmkjegA=
 github.com/turutcrane/win32api v0.0.0-20200712055021-6e37de89df7d h1:qtAjkOMQTqffxeUFm9gwMYTDDb6RmkgmsLTXFJNFemE=
 github.com/turutcrane/win32api v0.0.0-20200712055021-6e37de89df7d/go.mod h1:0M5CGcICREX8XFggo8rfqtqaScbCghwJuGIldKFTpUk=
 github.com/turutcrane/win32api v0.0.0-20200726071801-a420b3eccccd h1:IVQRJCaE7cQite4j+3vx6IWU2J4vte1qY7qXk4L75pI=
 github.com/turutcrane/win32api v0.0.0-20200726071801-a420b3eccccd/go.mod h1:0M5CGcICREX8XFggo8rfqtqaScbCghwJuGIldKFTpUk=
+github.com/turutcrane/win32api v0.0.0-20201005134946-b82454e51c58 h1:YfV5/7LYnlpLO/T893/V579PsioUrlyUaP8YR0yt/DU=
+github.com/turutcrane/win32api v0.0.0-20201005134946-b82454e51c58/go.mod h1:0M5CGcICREX8XFggo8rfqtqaScbCghwJuGIldKFTpUk=
 github.com/valyala/bytebufferpool v1.0.0/go.mod h1:6bBcMArwyJ5K/AmCkWv1jt77kVWyCJ6HpOuEn7z0Csc=
 github.com/valyala/fasthttp v1.2.0/go.mod h1:4vX61m6KN+xDduDNwXrhIAVZaZaZiQ1luJk8LWSxF3s=
 github.com/valyala/quicktemplate v1.4.1/go.mod h1:EH+4AkTd43SvgIbQHYu59/cJyxDoOVRUAfrukLPuGJ4=
