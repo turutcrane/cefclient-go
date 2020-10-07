@@ -273,7 +273,7 @@ func RegisterOsrClass(hInstance win32api.HINSTANCE, window_class string, backgro
 		Instance:   hInstance,
 		Icon:       0,
 		Cursor:     cursor,
-		Background: 0,
+		Background: background_brush,
 		MenuName:   win32api.MakeIntResource(IdcCefclient),
 		ClassName:  syscall.StringToUTF16Ptr(window_class),
 		IconSm:     iconSm,

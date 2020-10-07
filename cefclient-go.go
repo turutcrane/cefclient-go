@@ -98,6 +98,9 @@ func main() {
 	runtime.UnlockOSThread()
 
 	browserSettings := capi.NewCBrowserSettingsT()
+	browserSettings.SetBackgroundColor(background_color)
+	browserSettings.SetWindowlessFrameRate(mainConfig.windowless_frame_rate)
+
 	rect := win32api.Rect{Left: 0, Top: 0, Right: 0, Bottom: 0}
 	windowManager.CreateRootWindow(mainConfig, false, rect, browserSettings)
 

@@ -101,7 +101,6 @@ func (renderer *OsrRenderer) Initialize() {
 		glMust("T551:")
 
 		if renderer.IsTransparent() {
-			log.Println("T93:")
 			gl.ClearColor(0, 0, 0, 0)
 			glMust("T81:")
 		} else {
