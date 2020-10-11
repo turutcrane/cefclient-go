@@ -222,7 +222,6 @@ func (renderer *OsrRenderer) OnPaint(
 		}
 	} else if ctype == capi.PetPopup &&
 		renderer.popup_rect_.Width() > 0 && renderer.popup_rect_.Height() > 0 {
-		log.Println("T211:")
 		skip_pixels := 0
 		x := renderer.popup_rect_.X()
 		skip_rows := 0
@@ -280,7 +279,6 @@ func (renderer *OsrRenderer) Render() {
 		log.Panicln("T338:")
 	}
 	vertices := C.CBytes(buf.Bytes())
-	// log.Println("T285:", vertices)
 
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 	glMust("T275:")

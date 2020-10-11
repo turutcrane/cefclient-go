@@ -99,7 +99,6 @@ func (bw *BrowserWindowStd) GetDisplayHandler(*capi.CClientT) *capi.CDisplayHand
 
 func (bw *BrowserWindowStd) OnBeforeClose(self *capi.CLifeSpanHandlerT, browser *capi.CBrowserT) {
 	// capi.QuitMessageLoop()
-	log.Println("T104:")
 	bw.OnBrowserClosed(browser)
 }
 
@@ -107,11 +106,10 @@ func (bw *BrowserWindowStd) OnAfterCreated(
 	self *capi.CLifeSpanHandlerT,
 	browser *capi.CBrowserT,
 ) {
-	log.Println("T197:", "OnAfterCreated")
 	if bw.browser_ == nil {
 		bw.browser_ = browser
 	} else {
-		log.Println("T71:", "OnAfterCreated")
+		log.Println("T71:", "OnAfterCreated, not set bw.browser_")
 	}
 	bw.rootWin_.OnBrowserCreated(browser)
 }
@@ -120,8 +118,6 @@ func (bw *BrowserWindowStd) DoClose(
 	self *capi.CLifeSpanHandlerT,
 	browser *capi.CBrowserT,
 ) bool {
-	log.Println("T83: DoClose")
-
 	bw.is_closing_ = true
 	bw.rootWin_.OnBrowserWindowClosing()
 
@@ -195,7 +191,6 @@ func OnBeforePopup(
 	if origin.IsOsr() {
 		windowInfoOut.SetWindowlessRenderingEnabled(true)
 		bwo := origin.(*BrowserWindowOsr)
-		log.Println("T201:", windowInfoOut.ExternalBeginFrameEnabled())
 		windowInfoOut.SetExternalBeginFrameEnabled(bwo.external_begin_frame_enabled)
 		windowInfoOut.SetParentWindow(capi.ToCWindowHandleT(syscall.Handle(temp_hwnd_)))
 	} else {
@@ -204,6 +199,8 @@ func OnBeforePopup(
 	windowInfoOut.SetStyle(
 		win32const.WsChild | win32const.WsClipchildren |
 			win32const.WsClipsiblings | win32const.WsTabstop | win32const.WsVisible)
+
+	// Don't activate the hidden browser on creation.
 	exStyle := windowInfoOut.ExStyle()
 	windowInfoOut.SetExStyle(exStyle | win32const.WsExNoactivate)
 
@@ -358,7 +355,6 @@ func (rm *ResourceManager) OnBeforeResourceLoad(
 	request *capi.CRequestT,
 	callback *capi.CRequestCallbackT,
 ) (ret capi.CReturnValueT) {
-	// log.Println("T306:", request.GetUrl(), request.GetIdentifier())
 	if request.GetUrl() == kTestOrigin+kTestRequestPage {
 		rm.AddStreamResource(request)
 	}
@@ -377,8 +373,6 @@ func (rm *ResourceManager) GetResourceHandler(
 	frame *capi.CFrameT,
 	request *capi.CRequestT,
 ) (handler *capi.CResourceHandlerT) {
-	// log.Println("T308:", request.GetUrl(), request.GetIdentifier())
-
 	if rh, ok := rm.rh[request.GetUrl()]; ok {
 		handler = rh
 	}
@@ -561,7 +555,6 @@ func (rm *StreamResourceHandler) Open(
 	request *capi.CRequestT,
 	callback *capi.CCallbackT,
 ) (ret, handle_request bool) {
-	log.Println("T482:")
 	return true, true
 }
 
@@ -625,7 +618,6 @@ func (sv *myStringVisitor) Visit(self *capi.CStringVisitorT, cstring string) {
 	s := strings.Replace(cstring, ">", "&gt;", -1)
 	s = strings.Replace(s, "<", "&lt;", -1)
 	ss := "<html><meta charset=\"utf-8\"><body bgcolor=\"white\">Source:<pre>" + s + "</pre></body></html>"
-	// log.Println("T761:", ss)
 
 	sv.f(ss)
 }
@@ -679,7 +671,7 @@ func (v *myPluginInfoVisitor) Visit(
 	desc := info.GetDescription()
 	ver := info.GetVersion()
 	path := info.GetPath()
-	log.Println("T592:", count, total, name, desc, ver, path)
+
 	v.html += "\n<br/><br/>Name: " + name +
 		"\n<br/>Description: " + desc +
 		"\n<br/>Version: " + ver +

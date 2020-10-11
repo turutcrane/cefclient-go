@@ -55,7 +55,6 @@ type BrowserWindowOsr struct {
 type nullCClientT struct{}
 
 func (*nullCClientT) GetRenderHandler(self *capi.CClientT) (ret *capi.CRenderHandlerT) {
-	log.Println("T58: GetRenderHandler: return dummy RenderHandler")
 	rh := capi.AllocCRenderHandlerT() // has no hander routine
 	return rh
 }
@@ -149,7 +148,6 @@ func (bwo *BrowserWindowOsr) CreateBrowser(
 			windowInfo.SetExStyle(windowInfo.ExStyle() | win32const.WsExNoactivate)
 		}
 	}
-
 	capi.BrowserHostCreateBrowser(
 		windowInfo,
 		bwo.GetCClientT(),
@@ -228,7 +226,6 @@ func (bw *BrowserWindowOsr) OnLoadingStateChange(
 	canGoBack bool,
 	canGoForward bool,
 ) {
-	// log.Println("T198:", isLoading, canGoBack, canGoForward)
 	rootWin := bw.rootWin_
 
 	rootWin.OnLoadingStateChange(isLoading, canGoBack, canGoForward)
@@ -256,7 +253,6 @@ func (bwo *BrowserWindowOsr) GetRenderHandler(*capi.CClientT) *capi.CRenderHandl
 }
 
 func (bwo *BrowserWindowOsr) OnBeforeClose(self *capi.CLifeSpanHandlerT, browser *capi.CBrowserT) {
-	log.Println("T255: OnBeforeClose")
 
 	// render_handler_->SetBrowser(nullptr);
 	// render_handler_.reset();
@@ -281,7 +277,6 @@ func (bwo *BrowserWindowOsr) OnBeforeClose(self *capi.CLifeSpanHandlerT, browser
 	bwo.GetCRenderHandlerT().UnbindAll()
 	bwo.resourceManager.GetCResourceRequestHandlerT().UnbindAll()
 
-	log.Println("T267: OnBeforeClose(): End")
 }
 
 func (bwo *BrowserWindowOsr) OnAfterCreated(
@@ -291,7 +286,7 @@ func (bwo *BrowserWindowOsr) OnAfterCreated(
 	if bwo.browser_ == nil {
 		bwo.browser_ = browser
 	} else {
-		log.Println("T99:", "OnAfterCreated")
+		log.Println("T99:", "OnAfterCreated, Not set bwo.browser_")
 	}
 
 	// if (hwnd_) {
@@ -299,12 +294,17 @@ func (bwo *BrowserWindowOsr) OnAfterCreated(
 	// EnsureRenderHandler();
 	// render_handler_->SetBrowser(browser);
 	// }
+	if bwo.osr_hwnd_ != 0 {
+		if bwo.browser_ != nil && bwo.external_begin_frame_enabled {
+			// Start the BeginFrame timer.
+			bwo.Invalidate()
+		}
+	}
 
 	if bwo.osr_hwnd_ != 0 {
 		// Show the browser window. Called asynchronously so that the browser has
 		// time to create associated internal objects.
 		task := cef.NewTask(cef.TaskFunc(func() {
-			log.Println("T291: Task: bwo.Show()")
 			bwo.Show()
 		}))
 		capi.PostTask(capi.TidUi, task)
@@ -356,12 +356,9 @@ func (bwo *BrowserWindowOsr) DoClose(
 	self *capi.CLifeSpanHandlerT,
 	browser *capi.CBrowserT,
 ) bool {
-	log.Println("T365: DoClose")
-
 	bwo.is_closing_ = true
 	bwo.rootWin_.OnBrowserWindowClosing()
 
-	log.Println("T370: DoClose: End")
 	return false
 }
 
@@ -374,7 +371,6 @@ func (bwo *BrowserWindowOsr) GetResourceRequestHandler(
 	is_download int,
 	request_initiator string,
 ) (*capi.CResourceRequestHandlerT, bool) {
-	// log.Println("T369:", request.GetUrl())
 	return bwo.resourceManager.GetCResourceRequestHandlerT(), false
 }
 
@@ -432,24 +428,25 @@ func OsrWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPARA
 	if !ok {
 		return win32api.DefWindowProc(hWnd, message, wParam, lParam)
 	}
-	switch message {
+	msgId := win32const.MessageId(message)
+	switch msgId {
 	case win32const.WmLbuttondown, win32const.WmMbuttondown, win32const.WmRbuttondown,
 		win32const.WmLbuttonup, win32const.WmMbuttonup, win32const.WmRbuttonup,
 		win32const.WmMousemove, win32const.WmMouseleave, win32const.WmMousewheel:
-		bwo.OnMouseEvent(message, wParam, lParam)
+		bwo.OnMouseEvent(msgId, wParam, lParam)
 
 	case win32const.WmSize:
 		bwo.OnSize()
 
 	case win32const.WmSetfocus, win32const.WmKillfocus:
-		bwo.SetFocus(message == win32const.WmSetfocus)
+		bwo.SetFocus(win32const.MessageId(message) == win32const.WmSetfocus)
 
 	case win32const.WmCapturechanged, win32const.WmCancelmode:
 		bwo.OnCaptureLost()
 
 	case win32const.WmSyschar, win32const.WmSyskeydown, win32const.WmSyskeyup,
 		win32const.WmKeydown, win32const.WmKeyup, win32const.WmChar:
-		bwo.OnKeyEvent(message, wParam, lParam)
+		bwo.OnKeyEvent(msgId, wParam, lParam)
 
 	case win32const.WmPaint:
 		bwo.OnWmPaint()
@@ -462,7 +459,6 @@ func OsrWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPARA
 		}
 
 	case win32const.WmNcdestroy:
-		log.Println("T446: Osr WmNcdestroy")
 		windowManager.RemoveBrowserWindowOsr(bwo.osr_hwnd_)
 		bwo.osr_hwnd_ = 0
 	}
@@ -480,7 +476,7 @@ func (bwo *BrowserWindowOsr) OnWmPaint() {
 	}
 }
 
-func IsMouseEventFromTouch(message win32api.UINT) bool {
+func IsMouseEventFromTouch(message win32const.MessageId) bool {
 	const MOUSEEVENTF_FROMTOUCH = 0xFF515700
 	return (message >= win32const.WmMousefirst) && (message <= win32const.WmMouselast) &&
 		(win32api.GetMessageExtraInfo()&MOUSEEVENTF_FROMTOUCH) == MOUSEEVENTF_FROMTOUCH
@@ -494,7 +490,7 @@ func abs(x int) int {
 	return x
 }
 
-func (bwo *BrowserWindowOsr) OnMouseEvent(message win32api.UINT, wParam win32api.WPARAM, lParam win32api.LPARAM) {
+func (bwo *BrowserWindowOsr) OnMouseEvent(message win32const.MessageId, wParam win32api.WPARAM, lParam win32api.LPARAM) {
 	if IsMouseEventFromTouch(message) {
 		return
 	}
@@ -913,7 +909,7 @@ func (bwo *BrowserWindowOsr) OnCaptureLost() {
 	}
 }
 
-func (bwo *BrowserWindowOsr) OnKeyEvent(message win32api.UINT, wParam win32api.WPARAM, lParam win32api.LPARAM) {
+func (bwo *BrowserWindowOsr) OnKeyEvent(message win32const.MessageId, wParam win32api.WPARAM, lParam win32api.LPARAM) {
 	if bwo.browser_ == nil {
 		return
 	}
@@ -996,7 +992,6 @@ func (bwo *BrowserWindowOsr) ShowPopup(parentHwnd win32api.HWND, rect capi.CRect
 		capi.PostTask(capi.TidUi, task)
 		return
 	}
-	log.Println("T975:", rect)
 	bwo.Create(parentHwnd, rect)
 
 	// render_handler_->SetBrowser(browser_);

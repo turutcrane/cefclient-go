@@ -314,7 +314,6 @@ const (
 func GetWindowScaleFactor(hwnd win32api.HWND) float32 {
 	if hwnd != 0 && IsProcessPerMonitorDpiAware() {
 		dpi := win32api.GetDpiForWindow(hwnd)
-		// log.Println("T335: DpiAwar:", dpi)
 		return float32(dpi) / DPI_1X
 	}
 

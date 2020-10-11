@@ -178,7 +178,8 @@ func (rw *RootWindowWin) CreateWindow(
 
 func RootWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPARAM, lParam win32api.LPARAM) win32api.LRESULT {
 	var self *RootWindowWin
-	if message != win32const.WmNccreate {
+	msgId := win32const.MessageId(message)
+	if msgId != win32const.WmNccreate {
 		var ok bool
 		self, ok = windowManager.GetRootWin(hWnd)
 		if !ok {
@@ -198,7 +199,7 @@ func RootWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPAR
 		return 0
 	}
 
-	switch message {
+	switch msgId {
 	case win32const.WmCommand:
 		if self.OnCommand(win32api.UINT(win32api.LOWORD(wParam))) {
 			return 0
@@ -492,11 +493,11 @@ func (self *RootWindowWin) OnSize(minimized bool) {
 				syscall.StringToUTF16Ptr("Arial"),
 			)
 
-			win32api.SendMessage(self.back_hwnd_, win32const.WmSetfont, win32api.WPARAM(self.font_), 1)
-			win32api.SendMessage(self.forward_hwnd_, win32const.WmSetfont, win32api.WPARAM(self.font_), 1)
-			win32api.SendMessage(self.reload_hwnd_, win32const.WmSetfont, win32api.WPARAM(self.font_), 1)
-			win32api.SendMessage(self.stop_hwnd_, win32const.WmSetfont, win32api.WPARAM(self.font_), 1)
-			win32api.SendMessage(self.edit_hwnd_, win32const.WmSetfont, win32api.WPARAM(self.font_), 1)
+			win32api.SendMessage(self.back_hwnd_, win32api.UINT(win32const.WmSetfont), win32api.WPARAM(self.font_), 1)
+			win32api.SendMessage(self.forward_hwnd_, win32api.UINT(win32const.WmSetfont), win32api.WPARAM(self.font_), 1)
+			win32api.SendMessage(self.reload_hwnd_, win32api.UINT(win32const.WmSetfont), win32api.WPARAM(self.font_), 1)
+			win32api.SendMessage(self.stop_hwnd_, win32api.UINT(win32const.WmSetfont), win32api.WPARAM(self.font_), 1)
+			win32api.SendMessage(self.edit_hwnd_, win32api.UINT(win32const.WmSetfont), win32api.WPARAM(self.font_), 1)
 		}
 		rect.Top += win32api.LONG(urlbar_height)
 		x_offset := int(rect.Left)
@@ -713,7 +714,7 @@ func (self *RootWindowWin) OnAbout() {
 	)
 }
 
-func AboutWndProc(hDlg win32api.HWND, message win32api.UINT, wParam win32api.WPARAM, lParam win32api.LPARAM) win32api.LRESULT {
+func AboutWndProc(hDlg win32api.HWND, message win32const.MessageId, wParam win32api.WPARAM, lParam win32api.LPARAM) win32api.LRESULT {
 	switch message {
 	case win32const.WmInitdialog:
 		return win32const.True
@@ -758,7 +759,8 @@ func FindWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPAR
 		log.Panicln("T659: find_hwnd_ not match", hWnd, self.find_hwnd_)
 	}
 
-	switch message {
+	msgId := win32const.MessageId(message)
+	switch msgId {
 	case win32const.WmActivate:
 		// nothing to do on single thread message loop
 		return 0
@@ -894,7 +896,8 @@ func EditWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPAR
 		log.Panicln("T391: edit_hwnd_ not match", hWnd, self.edit_hwnd_)
 	}
 
-	switch message {
+	msgId := win32const.MessageId(message)
+	switch msgId {
 	case win32const.WmChar:
 		if wParam == win32const.VkReturn {
 			browser := self.GetBrowser()
@@ -902,11 +905,9 @@ func EditWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPAR
 			urlstr[0] = MaxUrlLength
 			sp := win32api.LPARAM(uintptr(unsafe.Pointer(&urlstr)))
 			result := win32api.SendMessage(hWnd, win32const.EmGetline, 0, sp)
-			log.Println("T242:", result)
 			if result > 0 {
 				runes := utf16.Decode(urlstr[0:result])
 				url := string(runes)
-				log.Println("T245:", url)
 				browser.GetMainFrame().LoadUrl(url)
 			}
 			return 0
@@ -924,7 +925,7 @@ func (self *RootWindowWin) Close(force bool) {
 		if force {
 			win32api.DestroyWindow(self.hwnd_)
 		} else {
-			win32api.PostMessage(self.hwnd_, win32const.WmClose, 0, 0)
+			win32api.PostMessage(self.hwnd_, win32api.UINT(win32const.WmClose), 0, 0)
 		}
 	}
 }
