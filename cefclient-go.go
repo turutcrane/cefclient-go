@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf16"
+	"unsafe"
 
 	"github.com/turutcrane/cefingo/capi"
 	"github.com/turutcrane/cefingo/cef"
@@ -40,6 +42,25 @@ func init() {
 	// capi.RefCountLogOutput(true)
 }
 
+type cefProcessType int
+const (
+	OtherProcces cefProcessType = iota
+	BrowserProcess
+	RenderProcess
+)
+
+func getCommandLine() *capi.CCommandLineT {
+	commandLine := capi.CommandLineCreate()
+	line := (*[1<<30]uint16)(unsafe.Pointer(win32api.GetCommandLine()))[:]
+	lineLen := 0
+	for ; line[lineLen] != 0; lineLen++{
+	}
+	runes := utf16.Decode(line[0:lineLen:lineLen])
+	commandLine.InitFromString(string(runes))
+
+	return commandLine
+}
+
 func main() {
 	// capi.Initialize(i.e. cef_initialize) and some function should be called on
 	// the main application thread to initialize the CEF browser process
@@ -56,6 +77,15 @@ func main() {
 	// log.Println("T38:", os.Getpid(), os.Args)
 	capi.EnableHighdpiSupport()
 
+	commandLine := getCommandLine()
+	var procType cefProcessType
+	if !commandLine.HasSwitch("type") {
+		procType = BrowserProcess
+	} else if commandLine.GetSwitchValue("type") == "renderer" {
+		procType = RenderProcess
+	}
+	log.Println("T87:", procType)
+
 	mainArgs := capi.NewCMainArgsT()
 	cef.CMainArgsTSetInstance(mainArgs)
 
@@ -63,8 +93,14 @@ func main() {
 	capi.AllocCAppT().Bind(app)
 	defer app.GetCAppT().UnbindAll()
 
-	capi.AllocCBrowserProcessHandlerT().Bind(app)
-	defer app.GetCBrowserProcessHandlerT().UnbindAll()
+	switch procType {
+	case BrowserProcess:
+		capi.AllocCBrowserProcessHandlerT().Bind(app)
+		defer app.GetCBrowserProcessHandlerT().UnbindAll()
+	case RenderProcess:
+		capi.AllocCRenderProcessHandlerT().Bind(app)
+		defer app.GetCRenderProcessHandlerT().UnbindAll()
+	}
 
 	cef.ExecuteProcess(mainArgs, app.GetCAppT())
 
@@ -108,26 +144,32 @@ func main() {
 	defer capi.Shutdown()
 }
 
-type myBrowserProcessHandler struct {
-	// this reference forms an UNgabagecollectable circular reference
-	// To GC, call myBrowserProcessHandler.SetCBrowserProcessHandlerT(nil)
-	capi.RefToCBrowserProcessHandlerT
-
-	// capi.RefToCClientT
-	// initial_url *string
-}
-
 type myApp struct {
 	capi.RefToCAppT
 	myBrowserProcessHandler
+
+	myRenderProcessHandler
 }
 
 func init() {
-	var _ capi.GetBrowserProcessHandlerHandler = (*myApp)(nil)
+	// capi.CAppT
+	var app *myApp
+	var _ capi.GetBrowserProcessHandlerHandler = app
+	var _ capi.GetRenderProcessHandlerHandler = app
+
+	// capi.CBrowserProcessHandlerT
+
+	// capi.CRenderProcessHandlerT
+	var _ capi.OnContextCreatedHandler = app
+	var _ capi.CRenderProcessHandlerTOnProcessMessageReceivedHandler = app
 }
 
 func (app *myApp) GetBrowserProcessHandler(self *capi.CAppT) *capi.CBrowserProcessHandlerT {
 	return app.GetCBrowserProcessHandlerT()
+}
+
+func (app *myApp) GetRenderProcessHandler(self *capi.CAppT) *capi.CRenderProcessHandlerT {
+	return app.GetCRenderProcessHandlerT()
 }
 
 func parseColor(color string) capi.CColorT {
@@ -144,4 +186,13 @@ func parseColor(color string) capi.CColorT {
 		return capi.ColorSetARGB(255, 255, 255, 255)
 	}
 	return 0
+}
+
+type myBrowserProcessHandler struct {
+	// this reference forms an UNgabagecollectable circular reference
+	// To GC, call myBrowserProcessHandler.SetCBrowserProcessHandlerT(nil)
+	capi.RefToCBrowserProcessHandlerT
+
+	// capi.RefToCClientT
+	// initial_url *string
 }

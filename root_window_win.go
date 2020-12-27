@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"syscall"
 	"unicode/utf16"
@@ -804,6 +806,9 @@ func onTestCommand(rw *RootWindowWin, id win32api.UINT) {
 
 	case IdTestsZoomReset:
 		rw.browser_window_.GetCBrowserT().GetHost().SetZoomLevel(0.0)
+
+	case IdTestsOsrFps:
+		PromptFPS(rw.browser_window_.GetCBrowserT())
 	}
 }
 
@@ -863,6 +868,29 @@ func runRequestTest(browser BrowserWindow) {
 func runPluginInfo(browser BrowserWindow) {
 	visitor := GetPlugInInfoVisitor(browser.GetCBrowserT(), browser.GetResourceManager())
 	capi.VisitWebPluginInfo(visitor)
+}
+
+func PromptFPS(browser *capi.CBrowserT) {
+	if !capi.CurrentlyOn(capi.TidUi) {
+		cef.PostTask(capi.TidUi, cef.TaskFunc(func() {
+			PromptFPS(browser)
+		}))
+		return
+	}
+	fps := browser.GetHost().GetWindowlessFrameRate()
+	Prompt(browser, kPromptFPS, "Enter FPS", strconv.Itoa(fps))
+}
+
+func Prompt(browser *capi.CBrowserT, prompt string, label string, default_value string) {
+
+	// Prompt the user for a new value. Works as follows:
+	// 1. Show a prompt() dialog via JavaScript.
+	// 2. Pass the result to window.cefQuery().
+	// 3. Handle the result in PromptHandler::OnQuery.
+	code := fmt.Sprintf("window.cefQuery({'request': '%s' + prompt('%s', '%s')});",
+	 prompt, label, default_value)
+	browser.GetMainFrame().ExecuteJavaScript(
+		code, browser.GetMainFrame().GetUrl(), 0)
 }
 
 func ModifyZoom(browser *capi.CBrowserT, delta float64) {

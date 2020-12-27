@@ -2,12 +2,14 @@ package main
 
 import (
 	"log"
+	"strconv"
 	"strings"
 	"syscall"
 	"unsafe"
 
 	"github.com/turutcrane/cefingo/capi"
 	"github.com/turutcrane/cefingo/cef"
+	"github.com/turutcrane/cefingo/message_router"
 	"github.com/turutcrane/win32api"
 	"github.com/turutcrane/win32api/win32const"
 )
@@ -50,6 +52,7 @@ func init() {
 	var _ capi.CClientTGetLoadHandlerHandler = bw
 	var _ capi.GetRequestHandlerHandler = bw
 	var _ capi.GetDisplayHandlerHandler = bw
+	var _ capi.CClientTOnProcessMessageReceivedHandler = bw
 
 	// capi.CLifeSpanHandlerT
 	var _ capi.OnBeforeCloseHandler = bw
@@ -63,6 +66,7 @@ func init() {
 	// capi.CRequestHandlerT
 	var _ capi.CRequestHandlerTGetResourceRequestHandlerHandler = bw
 	var _ capi.OnOpenUrlfromTabHandler = bw
+	var _ capi.OnBeforeBrowseHandler = bw
 
 	// capi.CDisplayHandlerT
 	var _ capi.OnAddressChangeHandler = bw
@@ -106,6 +110,8 @@ func (bw *BrowserWindowStd) OnAfterCreated(
 	self *capi.CLifeSpanHandlerT,
 	browser *capi.CBrowserT,
 ) {
+
+	// ClientHandler::NotifyBrowserCreated
 	if bw.browser_ == nil {
 		bw.browser_ = browser
 	} else {
@@ -294,10 +300,9 @@ func GetWindowHandle(browser *capi.CBrowserT) win32api.HWND {
 
 func SetBounds(browser *capi.CBrowserT, x, y int, width, height uint32) {
 	if !capi.CurrentlyOn(capi.TidUi) {
-		task := cef.NewTask(cef.TaskFunc(func() {
+		cef.PostTask(capi.TidUi, cef.TaskFunc(func() {
 			SetBounds(browser, x, y, width, height)
 		}))
-		capi.PostTask(capi.TidUi, task)
 		return
 	}
 
@@ -346,6 +351,75 @@ func (bw *BrowserWindowStd) OnOpenUrlfromTab(
 	}
 
 	return false
+}
+
+func (bw *BrowserWindowStd) OnBeforeBrowse(
+	self *capi.CRequestHandlerT,
+	browser *capi.CBrowserT,
+	frame *capi.CFrameT,
+	request *capi.CRequestT,
+	user_gesture bool,
+	is_redirect bool,
+) bool {
+	if !capi.CurrentlyOn(capi.TidUi) {
+		log.Panicln("T360:")
+	}
+	if frame.IsMain() {
+		router.BrowserCancelPendingForBrowser(browser)
+	}
+
+	return false
+}
+
+const routerMessagePrefix = "cef"
+func (bw *BrowserWindowStd) OnProcessMessageReceived(
+	self *capi.CClientT,
+	browser *capi.CBrowserT,
+	frame *capi.CFrameT,
+	source_process capi.CProcessIdT,
+	message *capi.CProcessMessageT,
+) (ret bool) {
+	log.Println("T381:")
+	return router.BrowserOnProcessMessageReceived(bw, browser, frame, routerMessagePrefix, message)
+}
+
+const (
+	kPrompt    = "Prompt."
+	kPromptFPS = "Prompt.FPS:"
+	kPromptDSF = "Prompt.DSF:"
+)
+
+func (bw *BrowserWindowStd) OnQuery(browser *capi.CBrowserT, frame *capi.CFrameT, request_str string, persistent bool, queryId router.BrowserQueryId, callback router.Callback) (handled bool) {
+	return browserWindowOnQuery(bw, browser, frame, request_str, persistent , callback)
+}
+
+func browserWindowOnQuery(bw BrowserWindow, browser *capi.CBrowserT, frame *capi.CFrameT, request_str string, persistent bool, callback router.Callback) (handled bool) {
+	log.Println("T396:", request_str)
+	if strings.HasPrefix(request_str, kPromptFPS) {
+		val := strings.TrimPrefix(request_str, kPromptFPS)
+		if fps, err := strconv.Atoi(val); err == nil {
+			if fps <= 0 {
+				browser.GetHost().SetWindowlessFrameRate(mainConfig.windowless_frame_rate)
+			} else {
+				log.Println("T403:", fps)
+				browser.GetHost().SetWindowlessFrameRate(fps)
+			}
+		}
+		handled = true
+	} else if strings.HasPrefix(request_str, kPromptDSF) {
+		val := strings.TrimPrefix(request_str, kPromptDSF)
+		if dsf, err := strconv.ParseFloat(val, 32); err == nil {
+			bw.SetDeviceScaleFactor(float32(dsf))
+		}
+		handled = true
+	}
+	callback.Success("")
+
+	return handled
+}
+
+func (bw *BrowserWindowStd) OnQueryCanceled(browser *capi.CBrowserT, frame *capi.CFrameT, query_id router.BrowserQueryId) {
+	// Nothing to do
 }
 
 func (rm *ResourceManager) OnBeforeResourceLoad(

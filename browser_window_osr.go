@@ -7,6 +7,7 @@ import (
 
 	"github.com/turutcrane/cefingo/capi"
 	"github.com/turutcrane/cefingo/cef"
+	"github.com/turutcrane/cefingo/message_router"
 	"github.com/turutcrane/win32api"
 	"github.com/turutcrane/win32api/win32const"
 )
@@ -52,13 +53,6 @@ type BrowserWindowOsr struct {
 	capi.RefToCRenderHandlerT
 }
 
-type nullCClientT struct{}
-
-func (*nullCClientT) GetRenderHandler(self *capi.CClientT) (ret *capi.CRenderHandlerT) {
-	rh := capi.AllocCRenderHandlerT() // has no hander routine
-	return rh
-}
-
 func init() {
 	var bwo *BrowserWindowOsr
 	// capi.CClientT
@@ -67,7 +61,7 @@ func init() {
 	var _ capi.GetRequestHandlerHandler = bwo
 	var _ capi.GetDisplayHandlerHandler = bwo
 	var _ capi.GetRenderHandlerHandler = bwo
-	var _ capi.GetRenderHandlerHandler = (*nullCClientT)(nil)
+	var _ capi.CClientTOnProcessMessageReceivedHandler = bwo
 
 	// capi.CLifeSpanHandlerT
 	var _ capi.DoCloseHandler = bwo
@@ -80,7 +74,8 @@ func init() {
 
 	// capi.CRequestHandlerT
 	var _ capi.CRequestHandlerTGetResourceRequestHandlerHandler = bwo
-	// var _ capi.OnOpenUrlfromTabHandler = (*BrowserWindowOsr)(nil)
+	// var _ capi.OnOpenUrlfromTabHandler = bwo
+	var _ capi.OnBeforeBrowseHandler = bwo
 
 	// capi.CDisplayHandlerT
 	var _ capi.OnAddressChangeHandler = bwo
@@ -91,6 +86,18 @@ func init() {
 	var _ capi.GetScreenPointHandler = bwo
 	var _ capi.GetScreenInfoHandler = bwo
 	var _ capi.OnPaintHandler = bwo
+}
+
+type nullCClientT struct{}
+
+func (*nullCClientT) GetRenderHandler(self *capi.CClientT) (ret *capi.CRenderHandlerT) {
+	rh := capi.AllocCRenderHandlerT() // has no hander routine
+	return rh
+}
+
+func init() {
+	// capi.CClientT
+	var _ capi.GetRenderHandlerHandler = (*nullCClientT)(nil)
 }
 
 func NewBrowserWindowOsr(
@@ -267,7 +274,9 @@ func (bwo *BrowserWindowOsr) OnBeforeClose(self *capi.CLifeSpanHandlerT, browser
 	bwo.rootWin_.OnBrowserWindowDestroyed()
 	var nullClient *nullCClientT
 
-	bwo.GetCClientT().UnbindAll()
+	bwo.GetCClientT().UnbindAll() // Without UnbindAll call, bwol can not be garbage collected.
+	// GetRenderHandler will be called after this OnBeforeClose.
+	// Unless this Bind, cause crash.
 	bwo.GetCClientT().Bind(nullClient) // nullClient returns dummy render handler
 
 	bwo.GetCLifeSpanHandlerT().UnbindAll()
@@ -304,10 +313,9 @@ func (bwo *BrowserWindowOsr) OnAfterCreated(
 	if bwo.osr_hwnd_ != 0 {
 		// Show the browser window. Called asynchronously so that the browser has
 		// time to create associated internal objects.
-		task := cef.NewTask(cef.TaskFunc(func() {
+		cef.PostTask(capi.TidUi, cef.TaskFunc(func() {
 			bwo.Show()
 		}))
-		capi.PostTask(capi.TidUi, task)
 	}
 
 	bwo.rootWin_.OnBrowserCreated(browser)
@@ -315,10 +323,9 @@ func (bwo *BrowserWindowOsr) OnAfterCreated(
 
 func (bwo *BrowserWindowOsr) Show() {
 	if !capi.CurrentlyOn(capi.TidUi) {
-		task := cef.NewTask(cef.TaskFunc(func() {
+		cef.PostTask(capi.TidUi, cef.TaskFunc(func() {
 			bwo.Show()
 		}))
-		capi.PostTask(capi.TidUi, task)
 		return
 	}
 	if bwo.browser_ == nil {
@@ -337,10 +344,9 @@ func (bwo *BrowserWindowOsr) Show() {
 
 func (bwo *BrowserWindowOsr) Hide() {
 	if !capi.CurrentlyOn(capi.TidUi) {
-		task := cef.NewTask(cef.TaskFunc(func() {
+		cef.PostTask(capi.TidUi, cef.TaskFunc(func() {
 			bwo.Hide()
 		}))
-		capi.PostTask(capi.TidUi, task)
 	}
 	if bwo.browser_ == nil {
 		return
@@ -393,10 +399,9 @@ func (bwo *BrowserWindowOsr) IsClosing() bool {
 
 func (bwo *BrowserWindowOsr) SetDeviceScaleFactor(device_scale_factor float32) {
 	if !capi.CurrentlyOn(capi.TidUi) {
-		task := cef.NewTask(cef.TaskFunc(func() {
+		cef.PostTask(capi.TidUi, cef.TaskFunc(func() {
 			bwo.SetDeviceScaleFactor(device_scale_factor)
 		}))
-		capi.PostTask(capi.TidUi, task)
 		return
 	}
 
@@ -412,10 +417,9 @@ func (bwo *BrowserWindowOsr) SetDeviceScaleFactor(device_scale_factor float32) {
 
 func (bwo *BrowserWindowOsr) SetFocus(focus bool) {
 	if !capi.CurrentlyOn(capi.TidUi) {
-		task := cef.NewTask(cef.TaskFunc(func() {
+		cef.PostTask(capi.TidUi, cef.TaskFunc(func() {
 			bwo.SetFocus(focus)
 		}))
-		capi.PostTask(capi.TidUi, task)
 		return
 	}
 	if bwo.osr_hwnd_ != 0 && focus {
@@ -847,10 +851,9 @@ func (bwo *BrowserWindowOsr) TriggerBeginFrame(last_time_us uint64, delay_us flo
 		bwo.begin_frame_pending_ = true
 	}
 
-	task := cef.NewTask(cef.TaskFunc(func() {
+	cef.PostDelayedTask(capi.TidUi, cef.TaskFunc(func() {
 		bwo.TriggerBeginFrame(now, delay_us)
-	}))
-	capi.PostDelayedTask(capi.TidUi, task, int64(offset/1000))
+	}), int64(offset/1000))
 
 	if bwo.external_begin_frame_enabled && bwo.browser_ != nil {
 		bwo.browser_.GetHost().SendExternalBeginFrame()
@@ -986,10 +989,9 @@ func (bwo *BrowserWindowOsr) IsOsr() bool {
 
 func (bwo *BrowserWindowOsr) ShowPopup(parentHwnd win32api.HWND, rect capi.CRectT) {
 	if !capi.CurrentlyOn(capi.TidUi) {
-		task := cef.NewTask(cef.TaskFunc(func() {
+		cef.PostTask(capi.TidUi, cef.TaskFunc(func() {
 			bwo.ShowPopup(parentHwnd, rect)
 		}))
-		capi.PostTask(capi.TidUi, task)
 		return
 	}
 	bwo.Create(parentHwnd, rect)
@@ -1005,4 +1007,42 @@ func (bwo *BrowserWindowOsr) ShowPopup(parentHwnd win32api.HWND, rect capi.CRect
 
 	bwo.browser_.GetHost().WasResized()
 	bwo.Show()
+}
+
+func (bw *BrowserWindowOsr) OnBeforeBrowse(
+	self *capi.CRequestHandlerT,
+	browser *capi.CBrowserT,
+	frame *capi.CFrameT,
+	request *capi.CRequestT,
+	user_gesture bool,
+	is_redirect bool,
+) bool {
+	if !capi.CurrentlyOn(capi.TidUi) {
+		log.Panicln("T360:")
+	}
+	if frame.IsMain() {
+		router.BrowserCancelPendingForBrowser(browser)
+	}
+
+	return false
+}
+
+func (bwo *BrowserWindowOsr) OnProcessMessageReceived(
+	self *capi.CClientT,
+	browser *capi.CBrowserT,
+	frame *capi.CFrameT,
+	source_process capi.CProcessIdT,
+	message *capi.CProcessMessageT,
+) (ret bool) {
+	log.Println("T1037:")
+	return router.BrowserOnProcessMessageReceived(bwo, browser, frame, routerMessagePrefix, message)
+}
+
+func (bwo *BrowserWindowOsr) OnQuery(browser *capi.CBrowserT, frame *capi.CFrameT, request_str string, persistent bool, queryId router.BrowserQueryId, callback router.Callback) (handled bool) {
+	log.Println("T1042:")
+	return browserWindowOnQuery(bwo, browser, frame, request_str, persistent, callback)
+}
+
+func (bwo *BrowserWindowOsr) OnQueryCanceled(browser *capi.CBrowserT, frame *capi.CFrameT, query_id router.BrowserQueryId) {
+	// Nothing to do
 }
