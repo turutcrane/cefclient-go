@@ -109,6 +109,18 @@ func (wm *WindowManager) GetRootWin(hwnd win32api.HWND) (rootWin *RootWindowWin,
 	return rootWin, exist
 }
 
+func (wm *WindowManager) GetRootWinForBrowser(browserId int) (rootWin *RootWindowWin) {
+	wm.rootWindowMap.Range(func (key interface{}, value interface{}) bool {
+		rw := value.(*RootWindowWin)
+		if rw.GetBrowser().GetIdentifier() == browserId {
+			rootWin = rw
+			return false
+		}
+		return true
+	})
+	return rootWin
+}
+
 func (wm *WindowManager) RemoveRootWin(hwnd win32api.HWND) {
 	wm.rootWindowMap.Delete(hwnd)
 }

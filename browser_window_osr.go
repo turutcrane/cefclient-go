@@ -86,6 +86,9 @@ func init() {
 	var _ capi.GetScreenPointHandler = bwo
 	var _ capi.GetScreenInfoHandler = bwo
 	var _ capi.OnPaintHandler = bwo
+
+	// DeviceScaleFactorer
+	var _ DeviceScaleFactorer = bwo
 }
 
 type nullCClientT struct{}
@@ -413,6 +416,10 @@ func (bwo *BrowserWindowOsr) SetDeviceScaleFactor(device_scale_factor float32) {
 		bwo.browser_.GetHost().NotifyScreenInfoChanged()
 		bwo.browser_.GetHost().WasResized()
 	}
+}
+
+func (bwo *BrowserWindowOsr) GetDeviceScaleFactor() float32 {
+	return bwo.device_scale_factor_
 }
 
 func (bwo *BrowserWindowOsr) SetFocus(focus bool) {

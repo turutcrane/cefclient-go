@@ -58,9 +58,11 @@ type RootWindowWin struct {
 func (rw *RootWindowWin) WithExtesion() bool {
 	return rw.with_extension_
 }
-
-type BrowserWindow interface {
+type DeviceScaleFactorer interface {
 	SetDeviceScaleFactor(float32)
+	GetDeviceScaleFactor() float32
+}
+type BrowserWindow interface {
 	// GetWindowHandle() win32api.HWND
 	CreateBrowser(
 		initial_url string,
@@ -425,7 +427,9 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 	}
 
 	device_scale_factor := GetWindowScaleFactor(self.hwnd_)
-	self.browser_window_.SetDeviceScaleFactor(device_scale_factor)
+	if dsfer, ok := self.browser_window_.(DeviceScaleFactorer); ok {
+		dsfer.SetDeviceScaleFactor(device_scale_factor)
+	}
 
 	r := capi.CRectT{}
 	r.SetX(int(rect.Left))
@@ -583,7 +587,9 @@ func (self *RootWindowWin) OnDpiChanged(wParam win32api.WPARAM, lParam win32api.
 		//	Scale factor for the new display.
 		//	static_cast<float>(LOWORD(wParam)) / DPI_1X;
 		display_scale_factor := float32(win32api.LOWORD(wParam)) / DPI_1X
-		self.browser_window_.SetDeviceScaleFactor(display_scale_factor)
+		if dsfer, ok := self.browser_window_.(DeviceScaleFactorer); ok {
+			dsfer.SetDeviceScaleFactor(display_scale_factor)
+		}
 	}
 
 	rect := win32api.LParamToPRect(lParam)
@@ -809,6 +815,9 @@ func onTestCommand(rw *RootWindowWin, id win32api.UINT) {
 
 	case IdTestsOsrFps:
 		PromptFPS(rw.browser_window_.GetCBrowserT())
+	case IdTestsOsrDsf:
+		PromptDSF(rw.browser_window_.GetCBrowserT())
+
 	}
 }
 
@@ -887,10 +896,21 @@ func Prompt(browser *capi.CBrowserT, prompt string, label string, default_value 
 	// 1. Show a prompt() dialog via JavaScript.
 	// 2. Pass the result to window.cefQuery().
 	// 3. Handle the result in PromptHandler::OnQuery.
-	code := fmt.Sprintf("window.cefQuery({'request': '%s' + prompt('%s', '%s')});",
+	code := fmt.Sprintf("window.%s({'request': '%s' + prompt('%s', '%s')});", jsQueryFunctionName,
 	 prompt, label, default_value)
 	browser.GetMainFrame().ExecuteJavaScript(
 		code, browser.GetMainFrame().GetUrl(), 0)
+}
+
+func PromptDSF(browser *capi.CBrowserT) {
+	if !capi.CurrentlyOn(capi.TidUi) {
+		cef.PostTask(capi.TidUi, cef.TaskFunc(func() {
+			PromptDSF(browser)
+		}))
+		return
+	}
+	dsf := windowManager.GetRootWinForBrowser(browser.GetIdentifier()).GetDeviceScaleFactor()
+	Prompt(browser, kPromptDSF, "Enter DSF", strconv.FormatFloat(float64(dsf), 'f', -1, 32))
 }
 
 func ModifyZoom(browser *capi.CBrowserT, delta float64) {
@@ -980,4 +1000,14 @@ func (rw *RootWindowWin) OnLoadingStateChange(
 	win32api.EnableWindow(rw.reload_hwnd_, !isLoading)
 	win32api.EnableWindow(rw.stop_hwnd_, isLoading)
 	win32api.EnableWindow(rw.edit_hwnd_, true)
+}
+
+func (rw *RootWindowWin) GetDeviceScaleFactor() float32 {
+	if rw.browser_window_ != nil && rw.with_osr_ {
+		if dsfer, ok := rw.browser_window_.(DeviceScaleFactorer); ok {
+			return dsfer.GetDeviceScaleFactor()
+		}
+	}
+	log.Panicln("T1003: Not Reacehd")
+	return 0
 }

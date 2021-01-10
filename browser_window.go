@@ -409,7 +409,9 @@ func browserWindowOnQuery(bw BrowserWindow, browser *capi.CBrowserT, frame *capi
 	} else if strings.HasPrefix(request_str, kPromptDSF) {
 		val := strings.TrimPrefix(request_str, kPromptDSF)
 		if dsf, err := strconv.ParseFloat(val, 32); err == nil {
-			bw.SetDeviceScaleFactor(float32(dsf))
+			if dsfer, ok := bw.(DeviceScaleFactorer); ok {
+				dsfer.SetDeviceScaleFactor(float32(dsf))
+			}
 		}
 		handled = true
 	}
@@ -451,10 +453,6 @@ func (rm *ResourceManager) GetResourceHandler(
 		handler = rh
 	}
 	return handler
-}
-
-func (bw *BrowserWindowStd) SetDeviceScaleFactor(device_scale_factor float32) {
-	return
 }
 
 type ResourceManager struct {
