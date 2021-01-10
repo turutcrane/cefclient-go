@@ -817,7 +817,10 @@ func onTestCommand(rw *RootWindowWin, id win32api.UINT) {
 		PromptFPS(rw.browser_window_.GetCBrowserT())
 	case IdTestsOsrDsf:
 		PromptDSF(rw.browser_window_.GetCBrowserT())
-
+	case IdTestsTracingBegin:
+		BeginTracing()
+	case IdTestsTracingEnd:
+		EndTracing(rw.browser_window_.GetCBrowserT())
 	}
 }
 
@@ -851,7 +854,7 @@ func runRequestTest(browser BrowserWindow) {
 	if !strings.HasPrefix(url, kTestOrigin) {
 		msg := "Please first navigate to a http://tests/ URL. " +
 			"For example, first load Tests > Other Tests."
-		frame.ExecuteJavaScript("alert('"+msg+"');", frame.GetUrl(), 0)
+		frame.ExecuteJavaScript("alert('"+msg+"');", url, 0)
 		return
 	}
 
@@ -1010,4 +1013,76 @@ func (rw *RootWindowWin) GetDeviceScaleFactor() float32 {
 	}
 	log.Panicln("T1003: Not Reacehd")
 	return 0
+}
+
+func BeginTracing() {
+	if !capi.CurrentlyOn(capi.TidUi) {
+		cef.PostTask(capi.TidUi, cef.TaskFunc(func() {
+			BeginTracing()
+		}))
+		return
+	}
+	capi.BeginTracing("", nil)
+}
+
+type endTraceCallback struct{
+	capi.RefToCEndTracingCallbackT
+	browser *capi.CBrowserT
+}
+
+func init() {
+	var etc *endTraceCallback
+
+	// capi.CEndTracingCallbackT
+	var _ capi.OnEndTracingCompleteHandler = etc
+
+	// capi.CRunFileDialogCallbackT
+	var _ capi.OnFileDialogDismissedHandler = etc
+}
+
+func (etc *endTraceCallback) OnEndTracingComplete(
+	self *capi.CEndTracingCallbackT,
+	tracing_file string,
+) {
+	frame := etc.browser.GetMainFrame()
+	url := frame.GetUrl()
+	frame.ExecuteJavaScript(fmt.Sprintf("alert('File \"%s\" saved successfully');", tracing_file), url, 0)
+}
+
+func EndTracing(browser *capi.CBrowserT) {
+	if !capi.CurrentlyOn(capi.TidUi) {
+		cef.PostTask(capi.TidUi, cef.TaskFunc(func() {
+			EndTracing(browser)
+		}))
+		return
+	}
+	etc := &endTraceCallback{browser: browser}
+	capi.AllocCEndTracingCallbackT().Bind(etc)
+	callback := capi.AllocCRunFileDialogCallbackT().Bind(etc)
+
+	accept_filters := cef.NewStringList()
+	log.Println("T1064:")
+	browser.GetHost().RunFileDialog(
+		capi.FileDialogSave | capi.FileDialogOverwritepromptFlag,
+		"", // title
+		"trace.txt",
+		accept_filters.CefObject(),
+		0,
+		callback,
+	)
+}
+
+func (etc *endTraceCallback) OnFileDialogDismissed(
+	self *capi.CRunFileDialogCallbackT,
+	selected_accept_filter int,
+	file_paths capi.CStringListT,
+) {
+	cb := etc.SetCEndTracingCallbackT(nil)
+	if (capi.StringListSize(file_paths) > 0) {
+		if ok, file := capi.StringListValue(file_paths, 0); ok {
+			capi.EndTracing(file, cb)
+			return
+		}
+	}
+	capi.EndTracing("", cb)
 }
