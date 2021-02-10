@@ -11,7 +11,6 @@ import (
 	"github.com/turutcrane/cefingo/cef"
 	"github.com/turutcrane/cefingo/message_router"
 	"github.com/turutcrane/win32api"
-	"github.com/turutcrane/win32api/win32const"
 )
 
 type BrowserWindowStd struct {
@@ -48,6 +47,7 @@ func NewBrowserWindowStd(rootWindow *RootWindowWin) *BrowserWindowStd {
 func init() {
 	var bw *BrowserWindowStd
 	// capi.CClientT
+	var _ capi.CClientTAccessor = bw
 	var _ capi.GetLifeSpanHandlerHandler = bw
 	var _ capi.CClientTGetLoadHandlerHandler = bw
 	var _ capi.GetRequestHandlerHandler = bw
@@ -203,12 +203,12 @@ func OnBeforePopup(
 		windowInfoOut.SetParentWindow(capi.ToCWindowHandleT(syscall.Handle(temp_hwnd_)))
 	}
 	windowInfoOut.SetStyle(
-		win32const.WsChild | win32const.WsClipchildren |
-			win32const.WsClipsiblings | win32const.WsTabstop | win32const.WsVisible)
+		win32api.WsChild | win32api.WsClipchildren |
+			win32api.WsClipsiblings | win32api.WsTabstop | win32api.WsVisible)
 
 	// Don't activate the hidden browser on creation.
 	exStyle := windowInfoOut.ExStyle()
-	windowInfoOut.SetExStyle(exStyle | win32const.WsExNoactivate)
+	windowInfoOut.SetExStyle(exStyle | win32api.WsExNoactivate)
 
 	return ret, windowInfoOut, clientOut, settingsOut, extra_info, no_javascript_access
 
@@ -250,11 +250,11 @@ func (bw *BrowserWindowStd) CreateBrowser(
 	windowInfo.SetY(rect.Y())
 	windowInfo.SetWidth(rect.Width())
 	windowInfo.SetHeight(rect.Height())
-	windowInfo.SetStyle(win32const.WsChild | win32const.WsClipchildren | win32const.WsClipsiblings | win32const.WsTabstop | win32const.WsVisible)
+	windowInfo.SetStyle(win32api.WsChild | win32api.WsClipchildren | win32api.WsClipsiblings | win32api.WsTabstop | win32api.WsVisible)
 
-	if exStyle, err := win32api.GetWindowLongPtr(parentHwnd, win32const.GwlExstyle); err == nil {
-		if exStyle&win32const.WsExNoactivate != 0 {
-			windowInfo.SetExStyle(windowInfo.ExStyle() | win32const.WsExNoactivate)
+	if exStyle, err := win32api.GetWindowLongPtr(parentHwnd, win32api.GwlExstyle); err == nil {
+		if exStyle&win32api.WsExNoactivate != 0 {
+			windowInfo.SetExStyle(windowInfo.ExStyle() | win32api.WsExNoactivate)
 		}
 	}
 
@@ -278,7 +278,7 @@ func (bw *BrowserWindowStd) Hide() {
 	hwnd := GetWindowHandle(bw.GetCBrowserT())
 	if hwnd != 0 {
 		win32api.SetWindowPos(hwnd, 0, 0, 0, 0, 0,
-			win32const.SwpNozorder|win32const.SwpNomove|win32const.SwpNoactivate)
+			win32api.SwpNozorder|win32api.SwpNomove|win32api.SwpNoactivate)
 	}
 
 }
@@ -286,7 +286,7 @@ func (bw *BrowserWindowStd) Hide() {
 func (bw *BrowserWindowStd) Show() {
 	hwnd := GetWindowHandle(bw.GetCBrowserT())
 	if hwnd != 0 && !win32api.IsWindowVisible(hwnd) {
-		win32api.ShowWindow(hwnd, win32const.SwShow)
+		win32api.ShowWindow(hwnd, win32api.SwShow)
 	}
 }
 
@@ -308,7 +308,7 @@ func SetBounds(browser *capi.CBrowserT, x, y int, width, height uint32) {
 
 	hwnd := GetWindowHandle(browser)
 	if hwnd != 0 {
-		win32api.SetWindowPos(hwnd, 0, x, y, int(width), int(height), win32const.SwpNozorder)
+		win32api.SetWindowPos(hwnd, 0, x, y, int(width), int(height), win32api.SwpNozorder)
 	}
 }
 
@@ -776,13 +776,13 @@ func (bw *BrowserWindowStd) ShowPopup(hwnd_ win32api.HWND, rect capi.CRectT) {
 		}
 		if err := win32api.SetWindowPos(bwHwnd, 0,
 			rect.X(), rect.Y(), rect.Width(), rect.Height(),
-			win32const.SwpNozorder|win32const.SwpNoactivate); err != nil {
+			win32api.SwpNozorder|win32api.SwpNoactivate); err != nil {
 			log.Panicln("T372:", err)
 		}
-		if exStyle, err := win32api.GetWindowLongPtr(hwnd_, win32const.GwlExstyle); err == nil {
-			swFlag := win32const.SwShow
-			if exStyle&win32const.WsExNoactivate != 0 {
-				swFlag = win32const.SwShownoactivate
+		if exStyle, err := win32api.GetWindowLongPtr(hwnd_, win32api.GwlExstyle); err == nil {
+			swFlag := win32api.SwShow
+			if exStyle&win32api.WsExNoactivate != 0 {
+				swFlag = win32api.SwShownoactivate
 			}
 			win32api.ShowWindow(bwHwnd, swFlag)
 		} else {

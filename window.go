@@ -7,10 +7,8 @@ import (
 	"syscall"
 	"unsafe"
 
-	// "github.com/JamesHovious/w32"
 	"github.com/turutcrane/cefingo/capi"
 	"github.com/turutcrane/win32api"
-	"github.com/turutcrane/win32api/win32const"
 )
 
 type WindowManager struct {
@@ -65,7 +63,7 @@ func (wm *WindowManager) GetTempWindow() win32api.HWND {
 	}
 	if wm.temp_window_, err = win32api.CreateWindowEx(0,
 		syscall.StringToUTF16Ptr(kWndClass), nil,
-		win32const.WsOverlappedwindow|win32const.WsClipchildren,
+		win32api.WsOverlappedwindow|win32api.WsClipchildren,
 		0, 0, 1, 1, 0, 0, win32api.HINSTANCE(hInstance), 0,
 	); err != nil {
 		log.Panicln("T69: Failed to CreateWindowsEx", err)
@@ -110,7 +108,7 @@ func (wm *WindowManager) GetRootWin(hwnd win32api.HWND) (rootWin *RootWindowWin,
 }
 
 func (wm *WindowManager) GetRootWinForBrowser(browserId int) (rootWin *RootWindowWin) {
-	wm.rootWindowMap.Range(func (key interface{}, value interface{}) bool {
+	wm.rootWindowMap.Range(func(key interface{}, value interface{}) bool {
 		rw := value.(*RootWindowWin)
 		if rw.GetBrowser().GetIdentifier() == browserId {
 			rootWin = rw
@@ -236,13 +234,13 @@ func RegisterRootClass(hInstance win32api.HINSTANCE, window_class string, backgr
 	if err != nil {
 		log.Panicln("T109: LoadIcon Sm", err)
 	}
-	cursor, err := win32api.LoadCursor(0, win32const.IdcArrow)
+	cursor, err := win32api.LoadCursor(0, win32api.MakeIntResource(win32api.IdcArrow))
 	if err != nil {
 		log.Panicln("T113: LoadCursor", err)
 	}
 	wndClass := win32api.Wndclassex{
 		Size:       win32api.UINT(unsafe.Sizeof(win32api.Wndclassex{})),
-		Style:      win32const.CsHredraw | win32const.CsVredraw,
+		Style:      win32api.CsHredraw | win32api.CsVredraw,
 		WndProc:    win32api.WNDPROC(syscall.NewCallback(RootWndProc)),
 		ClsExtra:   0,
 		WndExtra:   0,
@@ -268,7 +266,7 @@ func RegisterOsrClass(hInstance win32api.HINSTANCE, window_class string, backgro
 	}
 	class_regsitered_osr = true
 
-	cursor, err := win32api.LoadCursor(0, win32const.IdcArrow)
+	cursor, err := win32api.LoadCursor(0, win32api.MakeIntResource(win32api.IdcArrow))
 	if err != nil {
 		log.Panicln("T113: LoadCursor", err)
 	}
@@ -278,7 +276,7 @@ func RegisterOsrClass(hInstance win32api.HINSTANCE, window_class string, backgro
 	}
 	wndClass := win32api.Wndclassex{
 		Size:       win32api.UINT(unsafe.Sizeof(win32api.Wndclassex{})),
-		Style:      win32const.CsOwndc,
+		Style:      win32api.CsOwndc,
 		WndProc:    win32api.WNDPROC(syscall.NewCallback(OsrWndProc)),
 		ClsExtra:   0,
 		WndExtra:   0,
@@ -304,7 +302,7 @@ func IsProcessPerMonitorDpiAware() bool {
 		processPerMonitorDpiAware = &aBool
 
 		hresult := win32api.GetProcessDpiAwareness(0, &dpiAwareness)
-		if hresult == win32const.SOk {
+		if hresult == win32api.SOk {
 			*processPerMonitorDpiAware = true
 		}
 	}
@@ -358,7 +356,7 @@ func GetDeviceScaleFactor() float32 {
 		// must logout to change the DPI setting. This value also applies to all
 		// screens.
 		screen_dc := win32api.GetDC(0)
-		dpi_x := win32api.GetDeviceCaps(screen_dc, win32const.Logpixelsx)
+		dpi_x := win32api.GetDeviceCaps(screen_dc, win32api.Logpixelsx)
 		scale_factor = float32(dpi_x) / DPI_1X
 		win32api.ReleaseDC(0, screen_dc)
 		initialized = true
@@ -369,7 +367,7 @@ func GetDeviceScaleFactor() float32 {
 
 func SetWndProc(hWnd win32api.HWND, wndProc win32api.WndProc) win32api.WNDPROC {
 	proc := syscall.NewCallback(wndProc)
-	v, err := win32api.SetWindowLongPtr(hWnd, win32const.GwlpWndproc, proc)
+	v, err := win32api.SetWindowLongPtr(hWnd, win32api.GwlpWndproc, proc)
 	if err != nil {
 		log.Panicln("T383:", err)
 	}
@@ -381,98 +379,98 @@ func IsKeyDown(wparam int) bool {
 }
 
 func GetCefMouseModifiers(wparam win32api.WPARAM) (modifiers capi.CEventFlagsT) {
-	if (wparam & win32const.MkControl) != 0 {
+	if (wparam & win32api.MkControl) != 0 {
 		modifiers |= capi.EventflagControlDown
 	}
-	if (wparam & win32const.MkShift) != 0 {
+	if (wparam & win32api.MkShift) != 0 {
 		modifiers |= capi.EventflagShiftDown
 	}
-	if IsKeyDown(win32const.VkMenu) {
+	if IsKeyDown(win32api.VkMenu) {
 		modifiers |= capi.EventflagAltDown
 	}
-	if (wparam & win32const.MkLbutton) != 0 {
+	if (wparam & win32api.MkLbutton) != 0 {
 		modifiers |= capi.EventflagLeftMouseButton
 	}
-	if (wparam & win32const.MkMbutton) != 0 {
+	if (wparam & win32api.MkMbutton) != 0 {
 		modifiers |= capi.EventflagMiddleMouseButton
 	}
-	if (wparam & win32const.MkRbutton) != 0 {
+	if (wparam & win32api.MkRbutton) != 0 {
 		modifiers |= capi.EventflagRightMouseButton
 	}
 
 	// Low bit set from GetKeyState indicates "toggled".
-	if (win32api.GetKeyState(win32const.VkNumlock) & 1) != 0 {
+	if (win32api.GetKeyState(win32api.VkNumlock) & 1) != 0 {
 		modifiers |= capi.EventflagNumLockOn
 	}
-	if (win32api.GetKeyState(win32const.VkCapital) & 1) != 0 {
+	if (win32api.GetKeyState(win32api.VkCapital) & 1) != 0 {
 		modifiers |= capi.EventflagCapsLockOn
 	}
 	return modifiers
 }
 
 func GetCefKeyboardModifiers(wparam win32api.WPARAM, lparam win32api.LPARAM) (modifiers capi.CEventFlagsT) {
-	if IsKeyDown(win32const.VkShift) {
+	if IsKeyDown(win32api.VkShift) {
 		modifiers |= capi.EventflagShiftDown
 	}
-	if IsKeyDown(win32const.VkControl) {
+	if IsKeyDown(win32api.VkControl) {
 		modifiers |= capi.EventflagControlDown
 	}
-	if IsKeyDown(win32const.VkMenu) {
+	if IsKeyDown(win32api.VkMenu) {
 		modifiers |= capi.EventflagAltDown
 	}
 
 	// Low bit set from GetKeyState indicates "toggled".
-	if (win32api.GetKeyState(win32const.VkNumlock) & 1) != 0 {
+	if (win32api.GetKeyState(win32api.VkNumlock) & 1) != 0 {
 		modifiers |= capi.EventflagNumLockOn
 	}
-	if (win32api.GetKeyState(win32const.VkCapital) & 1) != 0 {
+	if (win32api.GetKeyState(win32api.VkCapital) & 1) != 0 {
 		modifiers |= capi.EventflagCapsLockOn
 	}
 
 	switch wparam {
-	case win32const.VkReturn:
-		if ((lparam >> 16) & win32const.KfExtended) != 0 {
+	case win32api.VkReturn:
+		if ((lparam >> 16) & win32api.KfExtended) != 0 {
 			modifiers |= capi.EventflagIsKeyPad
 		}
 
-	case win32const.VkInsert, win32const.VkDelete, win32const.VkHome, win32const.VkEnd,
-		win32const.VkPrior, win32const.VkNext, win32const.VkUp, win32const.VkDown, win32const.VkLeft, win32const.VkRight:
-		if ((lparam >> 16) & win32const.KfExtended) == 0 {
+	case win32api.VkInsert, win32api.VkDelete, win32api.VkHome, win32api.VkEnd,
+		win32api.VkPrior, win32api.VkNext, win32api.VkUp, win32api.VkDown, win32api.VkLeft, win32api.VkRight:
+		if ((lparam >> 16) & win32api.KfExtended) == 0 {
 			modifiers |= capi.EventflagIsKeyPad
 		}
 
-	case win32const.VkNumlock, win32const.VkNumpad0, win32const.VkNumpad1, win32const.VkNumpad2, win32const.VkNumpad3,
-		win32const.VkNumpad4, win32const.VkNumpad5, win32const.VkNumpad6, win32const.VkNumpad7,
-		win32const.VkNumpad8, win32const.VkNumpad9,
-		win32const.VkDivide, win32const.VkMultiply, win32const.VkSubtract, win32const.VkAdd,
-		win32const.VkDecimal, win32const.VkClear:
+	case win32api.VkNumlock, win32api.VkNumpad0, win32api.VkNumpad1, win32api.VkNumpad2, win32api.VkNumpad3,
+		win32api.VkNumpad4, win32api.VkNumpad5, win32api.VkNumpad6, win32api.VkNumpad7,
+		win32api.VkNumpad8, win32api.VkNumpad9,
+		win32api.VkDivide, win32api.VkMultiply, win32api.VkSubtract, win32api.VkAdd,
+		win32api.VkDecimal, win32api.VkClear:
 		modifiers |= capi.EventflagIsKeyPad
 
-	case win32const.VkShift:
-		if IsKeyDown(win32const.VkLshift) {
+	case win32api.VkShift:
+		if IsKeyDown(win32api.VkLshift) {
 			modifiers |= capi.EventflagIsLeft
-		} else if IsKeyDown(win32const.VkRshift) {
+		} else if IsKeyDown(win32api.VkRshift) {
 			modifiers |= capi.EventflagIsRight
 		}
 
-	case win32const.VkControl:
-		if IsKeyDown(win32const.VkLcontrol) {
+	case win32api.VkControl:
+		if IsKeyDown(win32api.VkLcontrol) {
 			modifiers |= capi.EventflagIsLeft
-		} else if IsKeyDown(win32const.VkRcontrol) {
+		} else if IsKeyDown(win32api.VkRcontrol) {
 			modifiers |= capi.EventflagIsRight
 		}
 
-	case win32const.VkMenu:
-		if IsKeyDown(win32const.VkLmenu) {
+	case win32api.VkMenu:
+		if IsKeyDown(win32api.VkLmenu) {
 			modifiers |= capi.EventflagIsLeft
-		} else if IsKeyDown(win32const.VkRmenu) {
+		} else if IsKeyDown(win32api.VkRmenu) {
 			modifiers |= capi.EventflagIsRight
 		}
 
-	case win32const.VkLwin:
+	case win32api.VkLwin:
 		modifiers |= capi.EventflagIsLeft
 
-	case win32const.VkRwin:
+	case win32api.VkRwin:
 		modifiers |= capi.EventflagIsRight
 	}
 	return modifiers
@@ -487,4 +485,13 @@ func GetTimeNow() uint64 {
 	var t win32api.LARGE_INTEGER
 	win32api.QueryPerformanceCounter(&t)
 	return uint64(float64(t) / float64(qi_freq) * 1000000)
+}
+
+func GetDownloadPath(fileName string) (path string) {
+	if hresult, p := win32api.SHGetKnownFolderPath(
+		win32api.FolderidDownloads,
+		win32api.CsidlPersonal|win32api.CsidlFlagCreate, 0); hresult == win32api.SOk {
+		path = p + "\\" + fileName
+	}
+	return path
 }

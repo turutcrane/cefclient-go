@@ -10,7 +10,6 @@ import (
 	"github.com/go-gl/gl/v4.4-compatibility/gl"
 	"github.com/turutcrane/cefingo/capi"
 	"github.com/turutcrane/win32api"
-	"github.com/turutcrane/win32api/win32const"
 )
 
 type OsrRenderer struct {
@@ -48,11 +47,11 @@ func (renderer *OsrRenderer) EnableGL(hwnd win32api.HWND) (win32api.HDC, win32ap
 	hdc := win32api.GetDC(hwnd)
 	pfd.Size = win32api.WORD(unsafe.Sizeof(pfd))
 	pfd.Version = 1
-	pfd.Flags = win32const.PfdDrawToWindow | win32const.PfdSupportOpengl | win32const.PfdDoublebuffer
-	pfd.PixelType = win32const.PfdTypeRgba
+	pfd.Flags = win32api.PfdDrawToWindow | win32api.PfdSupportOpengl | win32api.PfdDoublebuffer
+	pfd.PixelType = win32api.PfdTypeRgba
 	pfd.ColorBits = 24
 	pfd.DepthBits = 16
-	pfd.LayerType = win32const.PfdMainPlane
+	pfd.LayerType = win32api.PfdMainPlane
 	format, err := win32api.ChoosePixelFormat(hdc, &pfd)
 	if err != nil {
 		log.Panicln("T522:", err)

@@ -9,7 +9,6 @@ import (
 	"github.com/turutcrane/cefingo/cef"
 	"github.com/turutcrane/cefingo/message_router"
 	"github.com/turutcrane/win32api"
-	"github.com/turutcrane/win32api/win32const"
 )
 
 type BrowserWindowOsr struct {
@@ -153,9 +152,9 @@ func (bwo *BrowserWindowOsr) CreateBrowser(
 	windowInfo.SetWindowlessRenderingEnabled(true)
 	windowInfo.SetParentWindow(capi.ToCWindowHandleT(syscall.Handle(bwo.osr_hwnd_)))
 	windowInfo.SetExternalBeginFrameEnabled(bwo.external_begin_frame_enabled)
-	if exStyle, err := win32api.GetWindowLongPtr(parentHwnd, win32const.GwlExstyle); err == nil {
-		if exStyle&win32const.WsExNoactivate != 0 {
-			windowInfo.SetExStyle(windowInfo.ExStyle() | win32const.WsExNoactivate)
+	if exStyle, err := win32api.GetWindowLongPtr(parentHwnd, win32api.GwlExstyle); err == nil {
+		if exStyle&win32api.WsExNoactivate != 0 {
+			windowInfo.SetExStyle(windowInfo.ExStyle() | win32api.WsExNoactivate)
 		}
 	}
 	capi.BrowserHostCreateBrowser(
@@ -194,9 +193,9 @@ func (bwo *BrowserWindowOsr) Create(
 	}
 
 	dwExStyle := win32api.DWORD(0)
-	if exStyle, err := win32api.GetWindowLongPtr(parent_hwnd, win32const.GwlExstyle); err == nil {
-		if exStyle&win32const.WsExNoactivate != 0 {
-			dwExStyle |= win32const.WsExNoactivate
+	if exStyle, err := win32api.GetWindowLongPtr(parent_hwnd, win32api.GwlExstyle); err == nil {
+		if exStyle&win32api.WsExNoactivate != 0 {
+			dwExStyle |= win32api.WsExNoactivate
 		}
 	}
 
@@ -204,7 +203,7 @@ func (bwo *BrowserWindowOsr) Create(
 		dwExStyle,
 		syscall.StringToUTF16Ptr(window_class),
 		nil,
-		win32const.WsBorder|win32const.WsChild|win32const.WsClipchildren|win32const.WsVisible,
+		win32api.WsBorder|win32api.WsChild|win32api.WsClipchildren|win32api.WsVisible,
 		rect.X(), rect.Y(), rect.Width(), rect.Height(),
 		parent_hwnd,
 		0,
@@ -335,7 +334,7 @@ func (bwo *BrowserWindowOsr) Show() {
 		return
 	}
 	if bwo.osr_hwnd_ != 0 && !win32api.IsWindowVisible(bwo.osr_hwnd_) {
-		win32api.ShowWindow(bwo.osr_hwnd_, win32const.SwShow)
+		win32api.ShowWindow(bwo.osr_hwnd_, win32api.SwShow)
 	}
 	if bwo.hidden_ {
 		bwo.browser_.GetHost().WasHidden(false)
@@ -439,37 +438,37 @@ func OsrWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPARA
 	if !ok {
 		return win32api.DefWindowProc(hWnd, message, wParam, lParam)
 	}
-	msgId := win32const.MessageId(message)
+	msgId := win32api.MessageId(message)
 	switch msgId {
-	case win32const.WmLbuttondown, win32const.WmMbuttondown, win32const.WmRbuttondown,
-		win32const.WmLbuttonup, win32const.WmMbuttonup, win32const.WmRbuttonup,
-		win32const.WmMousemove, win32const.WmMouseleave, win32const.WmMousewheel:
+	case win32api.WmLbuttondown, win32api.WmMbuttondown, win32api.WmRbuttondown,
+		win32api.WmLbuttonup, win32api.WmMbuttonup, win32api.WmRbuttonup,
+		win32api.WmMousemove, win32api.WmMouseleave, win32api.WmMousewheel:
 		bwo.OnMouseEvent(msgId, wParam, lParam)
 
-	case win32const.WmSize:
+	case win32api.WmSize:
 		bwo.OnSize()
 
-	case win32const.WmSetfocus, win32const.WmKillfocus:
-		bwo.SetFocus(win32const.MessageId(message) == win32const.WmSetfocus)
+	case win32api.WmSetfocus, win32api.WmKillfocus:
+		bwo.SetFocus(win32api.MessageId(message) == win32api.WmSetfocus)
 
-	case win32const.WmCapturechanged, win32const.WmCancelmode:
+	case win32api.WmCapturechanged, win32api.WmCancelmode:
 		bwo.OnCaptureLost()
 
-	case win32const.WmSyschar, win32const.WmSyskeydown, win32const.WmSyskeyup,
-		win32const.WmKeydown, win32const.WmKeyup, win32const.WmChar:
+	case win32api.WmSyschar, win32api.WmSyskeydown, win32api.WmSyskeyup,
+		win32api.WmKeydown, win32api.WmKeyup, win32api.WmChar:
 		bwo.OnKeyEvent(msgId, wParam, lParam)
 
-	case win32const.WmPaint:
+	case win32api.WmPaint:
 		bwo.OnWmPaint()
 		return 0
 
-	case win32const.WmErasebkgnd:
+	case win32api.WmErasebkgnd:
 		// Erase the background when the browser does not exist.
 		if bwo.browser_ != nil {
 			return 0
 		}
 
-	case win32const.WmNcdestroy:
+	case win32api.WmNcdestroy:
 		windowManager.RemoveBrowserWindowOsr(bwo.osr_hwnd_)
 		bwo.osr_hwnd_ = 0
 	}
@@ -487,9 +486,9 @@ func (bwo *BrowserWindowOsr) OnWmPaint() {
 	}
 }
 
-func IsMouseEventFromTouch(message win32const.MessageId) bool {
+func IsMouseEventFromTouch(message win32api.MessageId) bool {
 	const MOUSEEVENTF_FROMTOUCH = 0xFF515700
-	return (message >= win32const.WmMousefirst) && (message <= win32const.WmMouselast) &&
+	return (message >= win32api.WmMousefirst) && (message <= win32api.WmMouselast) &&
 		(win32api.GetMessageExtraInfo()&MOUSEEVENTF_FROMTOUCH) == MOUSEEVENTF_FROMTOUCH
 }
 
@@ -501,7 +500,7 @@ func abs(x int) int {
 	return x
 }
 
-func (bwo *BrowserWindowOsr) OnMouseEvent(message win32const.MessageId, wParam win32api.WPARAM, lParam win32api.LPARAM) {
+func (bwo *BrowserWindowOsr) OnMouseEvent(message win32api.MessageId, wParam win32api.WPARAM, lParam win32api.LPARAM) {
 	if IsMouseEventFromTouch(message) {
 		return
 	}
@@ -513,16 +512,16 @@ func (bwo *BrowserWindowOsr) OnMouseEvent(message win32const.MessageId, wParam w
 	cancelPreviousClick := false
 
 	switch message {
-	case win32const.WmLbuttondown, win32const.WmRbuttondown, win32const.WmMbuttondown, win32const.WmMousemove, win32const.WmMouseleave:
+	case win32api.WmLbuttondown, win32api.WmRbuttondown, win32api.WmMbuttondown, win32api.WmMousemove, win32api.WmMouseleave:
 		currentTime = win32api.GetMessageTime()
 		x := win32api.GET_X_LPARAM(lParam)
 		y := win32api.GET_Y_LPARAM(lParam)
 		cancelPreviousClick =
-			(abs(bwo.last_click_x_-x) > (win32api.GetSystemMetrics(win32const.SmCxdoubleclk) / 2)) ||
-				(abs(bwo.last_click_y_-y) > (win32api.GetSystemMetrics(win32const.SmCydoubleclk) / 2)) ||
+			(abs(bwo.last_click_x_-x) > (win32api.GetSystemMetrics(win32api.SmCxdoubleclk) / 2)) ||
+				(abs(bwo.last_click_y_-y) > (win32api.GetSystemMetrics(win32api.SmCydoubleclk) / 2)) ||
 				((currentTime - bwo.last_click_time_) > win32api.LONG(win32api.GetDoubleClickTime()))
 		if cancelPreviousClick &&
-			(message == win32const.WmMousemove || message == win32const.WmMouseleave) {
+			(message == win32api.WmMousemove || message == win32api.WmMouseleave) {
 			bwo.last_click_count_ = 1
 			bwo.last_click_x_ = 0
 			bwo.last_click_y_ = 0
@@ -531,12 +530,12 @@ func (bwo *BrowserWindowOsr) OnMouseEvent(message win32const.MessageId, wParam w
 		}
 	}
 	switch message {
-	case win32const.WmLbuttondown, win32const.WmRbuttondown, win32const.WmMbuttondown:
+	case win32api.WmLbuttondown, win32api.WmRbuttondown, win32api.WmMbuttondown:
 		win32api.SetCapture(bwo.osr_hwnd_)
 		win32api.SetFocus(bwo.osr_hwnd_)
 		x := win32api.GET_X_LPARAM(lParam)
 		y := win32api.GET_Y_LPARAM(lParam)
-		if wParam&win32const.MkShift != 0 {
+		if wParam&win32api.MkShift != 0 {
 			bwo.current_mouse_pos_.X = win32api.LONG(x)
 			bwo.current_mouse_pos_.Y = win32api.LONG(y)
 			bwo.last_mouse_pos_.X = bwo.current_mouse_pos_.X
@@ -545,11 +544,11 @@ func (bwo *BrowserWindowOsr) OnMouseEvent(message win32const.MessageId, wParam w
 		} else {
 			var btnType capi.CMouseButtonTypeT
 			switch message {
-			case win32const.WmLbuttondown:
+			case win32api.WmLbuttondown:
 				btnType = capi.MbtLeft
-			case win32const.WmMbuttondown:
+			case win32api.WmMbuttondown:
 				btnType = capi.MbtMiddle
-			case win32const.WmRbuttondown:
+			case win32api.WmRbuttondown:
 				btnType = capi.MbtRight
 			}
 			if !cancelPreviousClick && (btnType == bwo.last_click_button_) {
@@ -572,7 +571,7 @@ func (bwo *BrowserWindowOsr) OnMouseEvent(message win32const.MessageId, wParam w
 				browser_host.SendMouseClickEvent(&mouse_event, btnType, false, bwo.last_click_count_)
 			}
 		}
-	case win32const.WmLbuttonup, win32const.WmMbuttonup, win32const.WmRbuttonup:
+	case win32api.WmLbuttonup, win32api.WmMbuttonup, win32api.WmRbuttonup:
 		if win32api.GetCapture() == bwo.osr_hwnd_ {
 			win32api.ReleaseCapture()
 		}
@@ -586,11 +585,11 @@ func (bwo *BrowserWindowOsr) OnMouseEvent(message win32const.MessageId, wParam w
 			y := win32api.GET_Y_LPARAM(lParam)
 			var btnType capi.CMouseButtonTypeT
 			switch message {
-			case win32const.WmLbuttonup:
+			case win32api.WmLbuttonup:
 				btnType = capi.MbtLeft
-			case win32const.WmMbuttonup:
+			case win32api.WmMbuttonup:
 				btnType = capi.MbtMiddle
-			case win32const.WmRbuttonup:
+			case win32api.WmRbuttonup:
 				btnType = capi.MbtRight
 			}
 			if browser_host != nil {
@@ -607,7 +606,7 @@ func (bwo *BrowserWindowOsr) OnMouseEvent(message win32const.MessageId, wParam w
 				browser_host.SendMouseClickEvent(&mouse_event, btnType, true, bwo.last_click_count_)
 			}
 		}
-	case win32const.WmMousemove:
+	case win32api.WmMousemove:
 		x := win32api.GET_X_LPARAM(lParam)
 		y := win32api.GET_Y_LPARAM(lParam)
 		if bwo.mouse_rotation_ {
@@ -627,7 +626,7 @@ func (bwo *BrowserWindowOsr) OnMouseEvent(message win32const.MessageId, wParam w
 				// be generated.
 				var tme win32api.Trackmouseevent
 				tme.Size = win32api.DWORD(unsafe.Sizeof(tme))
-				tme.Flags = win32const.TmeLeave
+				tme.Flags = win32api.TmeLeave
 				tme.Track = bwo.osr_hwnd_
 				if err := win32api.TrackMouseEvent(&tme); err != nil {
 					log.Panicln("T583:", err)
@@ -645,12 +644,12 @@ func (bwo *BrowserWindowOsr) OnMouseEvent(message win32const.MessageId, wParam w
 				browser_host.SendMouseMoveEvent(&mouse_event, false)
 			}
 		}
-	case win32const.WmMouseleave:
+	case win32api.WmMouseleave:
 		if bwo.mouse_tracking_ {
 			// Stop tracking mouse leave.
 			var tme win32api.Trackmouseevent
 			tme.Size = win32api.DWORD(unsafe.Sizeof(tme))
-			tme.Flags = win32const.TmeLeave & win32const.TmeCancel
+			tme.Flags = win32api.TmeLeave & win32api.TmeCancel
 			tme.Track = bwo.osr_hwnd_
 			if err := win32api.TrackMouseEvent(&tme); err != nil {
 				log.Panicln("T607:", err)
@@ -671,7 +670,7 @@ func (bwo *BrowserWindowOsr) OnMouseEvent(message win32const.MessageId, wParam w
 			mouse_event.SetModifiers(uint32(GetCefMouseModifiers(wParam)))
 			browser_host.SendMouseMoveEvent(&mouse_event, true)
 		}
-	case win32const.WmMousewheel:
+	case win32api.WmMousewheel:
 		if browser_host != nil {
 			screen_point := win32api.Point{
 				X: win32api.LONG(win32api.GET_X_LPARAM(lParam)),
@@ -690,7 +689,7 @@ func (bwo *BrowserWindowOsr) OnMouseEvent(message win32const.MessageId, wParam w
 			mouse_event = DeviceToLogicalMouseEvent(mouse_event, bwo.device_scale_factor_)
 			mouse_event.SetModifiers(uint32(GetCefMouseModifiers(wParam)))
 			var delta_x, delta_y int
-			if IsKeyDown(win32const.VkShift) {
+			if IsKeyDown(win32api.VkShift) {
 				delta_x = delta
 			} else {
 				delta_y = delta
@@ -919,7 +918,7 @@ func (bwo *BrowserWindowOsr) OnCaptureLost() {
 	}
 }
 
-func (bwo *BrowserWindowOsr) OnKeyEvent(message win32const.MessageId, wParam win32api.WPARAM, lParam win32api.LPARAM) {
+func (bwo *BrowserWindowOsr) OnKeyEvent(message win32api.MessageId, wParam win32api.WPARAM, lParam win32api.LPARAM) {
 	if bwo.browser_ == nil {
 		return
 	}
@@ -928,13 +927,13 @@ func (bwo *BrowserWindowOsr) OnKeyEvent(message win32const.MessageId, wParam win
 	var event capi.CKeyEventT
 	event.SetWindowsKeyCode(int(wParam))
 	event.SetNativeKeyCode(int(lParam))
-	if message == win32const.WmSyschar || message == win32const.WmSyskeydown || message == win32const.WmSyskeyup {
+	if message == win32api.WmSyschar || message == win32api.WmSyskeydown || message == win32api.WmSyskeyup {
 		event.SetIsSystemKey(1)
 	}
 
-	if message == win32const.WmKeydown || message == win32const.WmSyskeydown {
+	if message == win32api.WmKeydown || message == win32api.WmSyskeydown {
 		event.SetType(capi.KeyeventRawkeydown)
-	} else if message == win32const.WmKeyup || message == win32const.WmSyskeyup {
+	} else if message == win32api.WmKeyup || message == win32api.WmSyskeyup {
 		event.SetType(capi.KeyeventKeyup)
 	} else {
 		event.SetType(capi.KeyeventChar)
@@ -943,7 +942,7 @@ func (bwo *BrowserWindowOsr) OnKeyEvent(message win32const.MessageId, wParam win
 	event.SetModifiers(uint32(GetCefKeyboardModifiers(wParam, lParam)))
 	// mimic alt-gr check behaviour from
 	// src/ui/events/win/events_win_utils.cc: GetModifiersFromKeyState
-	if (event.Type() == capi.KeyeventChar) && IsKeyDown(win32const.VkRmenu) {
+	if (event.Type() == capi.KeyeventChar) && IsKeyDown(win32api.VkRmenu) {
 		// reverse AltGr detection taken from PlatformKeyMap::UsesAltGraph
 		// instead of checking all combination for ctrl-alt, just check current char
 		current_layout := win32api.GetKeyboardLayout(0)
