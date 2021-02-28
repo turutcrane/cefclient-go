@@ -825,6 +825,12 @@ func onTestCommand(rw *RootWindowWin, id win32api.UINT) {
 		browser.GetHost().Print()
 	case IdTestsPrintToPdf:
 		PrintToPdf(rw.browser_window_.GetCBrowserT())
+	case IdTestsMuteAudio:
+		MuteAudio(rw.browser_window_.GetCBrowserT(), true)
+	case IdTestsUnmuteAudio:
+		MuteAudio(rw.browser_window_.GetCBrowserT(), false)
+	case IdTestsOtherTests:
+		RunOtherTests(rw.browser_window_.GetCBrowserT())
 	}
 }
 
@@ -1159,4 +1165,13 @@ func PrintToPdf(browser *capi.CBrowserT) {
 		0,
 		callback,
 	)
+}
+
+func MuteAudio(browser *capi.CBrowserT, mute bool) {
+	host := browser.GetHost()
+	host.SetAudioMuted(mute)
+}
+
+func RunOtherTests(browser *capi.CBrowserT) {
+	browser.GetMainFrame().LoadUrl("http://tests/other_tests")
 }

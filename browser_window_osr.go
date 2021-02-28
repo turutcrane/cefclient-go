@@ -26,7 +26,7 @@ type BrowserWindowOsr struct {
 
 	client_rect_ capi.CRectT
 
-	resourceManager ResourceManager
+	resourceManager *ResourceManager
 
 	// Mouse state tracking osr_window_win.h
 	last_click_x_            int
@@ -111,7 +111,7 @@ func NewBrowserWindowOsr(
 ) *BrowserWindowOsr {
 	bwo := &BrowserWindowOsr{}
 	bwo.rootWin_ = rootWindow
-	bwo.resourceManager.rh = map[string]*capi.CResourceHandlerT{}
+	bwo.resourceManager = NewResourceManager()
 
 	bwo.external_begin_frame_enabled = external_begin_frame_enabled
 	bwo.windowless_frame_rate = windowless_frame_rate
@@ -225,7 +225,7 @@ func (bwo *BrowserWindowOsr) GetCBrowserT() *capi.CBrowserT {
 }
 
 func (bwo *BrowserWindowOsr) GetResourceManager() *ResourceManager {
-	return &bwo.resourceManager
+	return bwo.resourceManager
 }
 
 func (bw *BrowserWindowOsr) OnLoadingStateChange(

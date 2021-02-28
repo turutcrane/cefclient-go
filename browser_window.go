@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net/url"
 	"strconv"
 	"strings"
 	"syscall"
@@ -17,7 +18,7 @@ type BrowserWindowStd struct {
 	rootWin_        *RootWindowWin
 	browser_        *capi.CBrowserT
 	is_closing_     bool
-	resourceManager ResourceManager
+	resourceManager *ResourceManager
 
 	capi.RefToCClientT
 	capi.RefToCLifeSpanHandlerT
@@ -29,7 +30,7 @@ type BrowserWindowStd struct {
 func NewBrowserWindowStd(rootWindow *RootWindowWin) *BrowserWindowStd {
 	bw := &BrowserWindowStd{}
 	bw.rootWin_ = rootWindow
-	bw.resourceManager.rh = map[string]*capi.CResourceHandlerT{}
+	bw.resourceManager = NewResourceManager()
 
 	capi.AllocCLifeSpanHandlerT().Bind(bw)
 	capi.AllocCClientT().Bind(bw)
@@ -223,7 +224,7 @@ func (bw *BrowserWindowStd) IsOsr() bool {
 }
 
 func (bw *BrowserWindowStd) GetResourceManager() *ResourceManager {
-	return &bw.resourceManager
+	return bw.resourceManager
 }
 
 func (bw *BrowserWindowStd) OnBrowserClosed(browser *capi.CBrowserT) {
@@ -372,6 +373,7 @@ func (bw *BrowserWindowStd) OnBeforeBrowse(
 }
 
 const routerMessagePrefix = "cef"
+
 func (bw *BrowserWindowStd) OnProcessMessageReceived(
 	self *capi.CClientT,
 	browser *capi.CBrowserT,
@@ -390,7 +392,7 @@ const (
 )
 
 func (bw *BrowserWindowStd) OnQuery(browser *capi.CBrowserT, frame *capi.CFrameT, request_str string, persistent bool, queryId router.BrowserQueryId, callback router.Callback) (handled bool) {
-	return browserWindowOnQuery(bw, browser, frame, request_str, persistent , callback)
+	return browserWindowOnQuery(bw, browser, frame, request_str, persistent, callback)
 }
 
 func browserWindowOnQuery(bw BrowserWindow, browser *capi.CBrowserT, frame *capi.CFrameT, request_str string, persistent bool, callback router.Callback) (handled bool) {
@@ -431,13 +433,42 @@ func (rm *ResourceManager) OnBeforeResourceLoad(
 	request *capi.CRequestT,
 	callback *capi.CRequestCallbackT,
 ) (ret capi.CReturnValueT) {
-	if request.GetUrl() == kTestOrigin+kTestRequestPage {
-		rm.AddStreamResource(request)
+	requestUrl := request.GetUrl()
+	if u, err := url.Parse(requestUrl); err == nil {
+		if u.Host == kTestHost && u.Path == kTestDir+kTestRequestPage {
+			stream, header_map := GetDumpResponse(request)
+			rm.AddStreamResource(requestUrl, stream, header_map)
+		} else {
+			log.Println("T442:", u.Path)
+			filterdPath := urlPathFilter(u)
+			if binaryId, ok := resourceMap[strings.TrimPrefix(filterdPath, kTestDir)]; ok {
+				res := LoadBinaryResource(binaryId)
+				log.Println("T445:", res)
+				rm.AddBytesResource(requestUrl, "text/html", res)
+			}
+		}
+	} else {
+		log.Panicln("T441:", err, request.GetUrl())
 	}
 	return capi.RvContinue
 }
 
-const kTestOrigin = "http://tests/"
+func urlPathFilter(u *url.URL) string {
+	if u.Host != kTestHost {
+		return u.Path
+	}
+	ps := strings.Split(u.Path, "/")
+	last := ps[len(ps)-1]
+	if last == "" || strings.Contains(last, ".") {
+		return u.Path
+	}
+	return u.Path + ".html"
+}
+
+const kTestHost = "tests"
+const kLocalHost = "localhost"
+const kTestDir = "/"
+const kTestOrigin = "http://" + kTestHost + kTestDir
 const kTestGetSourcePage = "get_source.html"
 const kTestGetTextPage = "get_text.html"
 const kTestRequestPage = "request.html"
@@ -462,13 +493,21 @@ type ResourceManager struct {
 
 func init() {
 	// capi.CResourceRequestHandlerT
-	var _ capi.OnBeforeResourceLoadHandler = (*ResourceManager)(nil)
-	var _ capi.GetResourceHandlerHandler = (*ResourceManager)(nil)
-
+	var rrh *ResourceManager
+	var _ capi.OnBeforeResourceLoadHandler = rrh
+	var _ capi.GetResourceHandlerHandler = rrh
 }
 
-func (rm *ResourceManager) AddStringResource(url, mime, content string) {
-	rh := &StringResourceHandler{url, []byte(content), mime, 0}
+func NewResourceManager() (rm *ResourceManager) {
+	rm = &ResourceManager{
+		rh: map[string]*capi.CResourceHandlerT{},
+	}
+	capi.AllocCResourceRequestHandlerT().Bind(rm)
+	return rm
+}
+
+func (rm *ResourceManager) AddBytesResource(url, mime string, content []byte) {
+	rh := &StringResourceHandler{url, content, mime, 0}
 	cefHandler := capi.AllocCResourceHandlerT().Bind(rh)
 	rm.rh[url] = cefHandler
 }
@@ -545,11 +584,15 @@ func GetDumpResponse(request *capi.CRequestT) (stream *capi.CStreamReaderT, resp
 	n := capi.StringMultimapFindCount(headerMap.CefObject(), "origin")
 	for i := int64(0); i < n; i++ {
 		if ok, value := capi.StringMultimapEnumerate(headerMap.CefObject(), "origin", i); ok {
-			capi.StringMultimapAppend(headerMap.CefObject(), "Access-Control-Allow-Origin", value)
+			if strings.HasPrefix(value, "https://"+kTestHost) ||
+				strings.HasPrefix(value, "https://"+kLocalHost) {
+				capi.StringMultimapAppend(responseHeaderMap.CefObject(), "Access-Control-Allow-Origin", value)
+				break
+			}
 		}
 	}
 	if n > 0 {
-		capi.StringMultimapAppend(headerMap.CefObject(), "Access-Control-Allow-Headers", "My-Custom-Header")
+		capi.StringMultimapAppend(responseHeaderMap.CefObject(), "Access-Control-Allow-Headers", "My-Custom-Header")
 	}
 	dump := DumpRequestContents(request)
 	content := "<html><body bgcolor=\"white\"><pre>" + dump + "</pre></body></html>"
@@ -596,10 +639,8 @@ func DumpRequestContents(request *capi.CRequestT) (dump string) {
 	return dump
 }
 
-func (rm *ResourceManager) AddStreamResource(request *capi.CRequestT) {
-	url := request.GetUrl()
-	stream, header_map := GetDumpResponse(request)
-	rh := &StreamResourceHandler{url, stream, header_map, "text/html", 200, "OK"}
+func (rm *ResourceManager) AddStreamResource(url string, stream *capi.CStreamReaderT, headerMap *cef.StringMultimap) {
+	rh := &StreamResourceHandler{url, stream, headerMap, "text/html", 200, "OK"}
 	cefHandler := capi.AllocCResourceHandlerT().Bind(rh)
 	rm.rh[url] = cefHandler
 }
@@ -670,7 +711,7 @@ func GetSource(bw BrowserWindow) {
 	url := kTestOrigin + kTestGetSourcePage
 	mySv := myStringVisitor{
 		f: func(c string) {
-			rm.AddStringResource(url, "text/html", c)
+			rm.AddBytesResource(url, "text/html", []byte(c))
 			browser.GetMainFrame().LoadUrl(url)
 		},
 	}
@@ -700,7 +741,7 @@ func GetText(bw BrowserWindow) {
 	url := kTestOrigin + kTestGetTextPage
 	mySv := myStringVisitor{
 		f: func(c string) {
-			rm.AddStringResource(url, "text/html", c)
+			rm.AddBytesResource(url, "text/html", []byte(c))
 			browser.GetMainFrame().LoadUrl(url)
 		},
 	}
@@ -751,7 +792,7 @@ func (v *myPluginInfoVisitor) Visit(
 	if count+1 >= total {
 		v.html += "\n</body></html>"
 		url := kTestOrigin + kTestPluginInfoPage
-		v.rm.AddStringResource(url, "text/html", v.html)
+		v.rm.AddBytesResource(url, "text/html", []byte(v.html))
 		v.browser.GetMainFrame().LoadUrl(url)
 	}
 	return true
