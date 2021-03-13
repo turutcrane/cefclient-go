@@ -4,11 +4,17 @@ package main
 // #include "tests/cefclient/browser/resource.h"
 import "C"
 import (
+	"bytes"
+	"embed"
+	"encoding/binary"
 	"log"
 	"unsafe"
 
 	"github.com/turutcrane/win32api"
 )
+
+//go:embed resources
+var resFs embed.FS
 
 const (
 	RtBinary = C.BINARY
@@ -39,9 +45,13 @@ const (
 	IdTestsLast         = C.ID_TESTS_LAST
 )
 
+// const (
+// 	IdiCefclient = C.IDI_CEFCLIENT
+// 	IdiSmall     = C.IDI_SMALL
+// )
 const (
-	IdiCefclient = C.IDI_CEFCLIENT
-	IdiSmall     = C.IDI_SMALL
+	ResCefclientIcon = "resources/win/cefclient.ico"
+	ResSmallIcon     = "resources/win/small.ico"
 )
 
 const (
@@ -152,4 +162,102 @@ func LoadBinaryResource(binaryId int) []byte {
 		log.Panicln("T457:", err)
 	}
 	return C.GoBytes(unsafe.Pointer(p), C.int(size))
+}
+
+type IconDir struct {
+	Reserved      uint16
+	ResourceType  uint16
+	ResourceCount uint16
+}
+
+type IconDirEntry struct {
+	Width        byte
+	Height       byte
+	ColorCount   byte
+	Rsrvd1       byte
+	ColorPlane   uint16
+	PixelPerBits uint16
+	DataCount    uint32
+	DataOffset   uint32
+}
+
+func loadIconResource(handle win32api.HINSTANCE, resPath string) (icon win32api.HICON) {
+	// icBytes, err := resFs.ReadFile(ResSmallIcon)
+	// icBytes, err := resFs.ReadFile(ResCefclientIcon)
+	icBytes, err := resFs.ReadFile(resPath)
+	if err != nil {
+		log.Panicln("T164:", err)
+	}
+	b := bytes.NewReader(icBytes)
+
+	var dir IconDir
+	if err := binary.Read(b, binary.LittleEndian, &dir); err != nil {
+		log.Panicln("T42:", err)
+	}
+	// log.Println("T45:", dir)
+
+	inum := int(dir.ResourceCount)
+	var icons []IconDirEntry
+	// offset := dirOffset + i*16
+	for i := 0; i < inum; i++ {
+		var entry IconDirEntry
+		if err := binary.Read(b, binary.LittleEndian, &entry); err != nil {
+			log.Panicln("T44:", err)
+		}
+		icons = append(icons, entry)
+		// fmt.Println("T56:", entry)
+	}
+
+	xpixel := win32api.GetSystemMetrics(win32api.SmCxicon)
+	ypixel := win32api.GetSystemMetrics(win32api.SmCyicon)
+	screen_dc := win32api.GetDC(0)
+	bitsPixel := win32api.GetDeviceCaps(screen_dc, win32api.Bitspixel)
+	planes := win32api.GetDeviceCaps(screen_dc, win32api.Planes)
+	// fmt.Println("T64:", planes, bitsPixel)
+
+	for _, ic := range icons {
+		b = bytes.NewReader(icBytes[ic.DataOffset:])
+		var bitMap win32api.Bitmapinfoheader
+		if err := binary.Read(b, binary.LittleEndian, &bitMap); err != nil {
+			log.Panicln("T59:", err)
+		}
+		if bitMap.Size != win32api.DWORD(unsafe.Sizeof(bitMap)) {
+			log.Panicln("T73: Size mismatch", bitMap.Size)
+		}
+		if int(ic.Width) == xpixel && int(ic.Height) == ypixel &&
+			int(bitMap.Planes) == planes && int(bitMap.BitCount) == bitsPixel {
+			// log.Println("T52:", ic)
+			// log.Println("T68:", bitMap)
+			if bitMap.Compression != win32api.BiRgb {
+				log.Panicln("T77: Not suported type", bitMap.Compression)
+			}
+			if bitMap.BitCount <= 8 {
+				log.Panicln("T80: Not suported type", bitMap.BitCount)
+			}
+			colorTableSize := 0
+			pixelDataSize := int(ic.Width) * int(ic.Height) * (32 / 8)
+			pixelDataOffset := int(ic.DataOffset) + int(bitMap.Size) + colorTableSize
+			maskDataSize := (((3 + int(ic.Width)/8) / 4) * 4) * int(ic.Height)
+			maskDataOffset := pixelDataOffset + pixelDataSize
+
+			if int(unsafe.Sizeof(bitMap))+colorTableSize+pixelDataSize+maskDataSize != int(ic.DataCount) {
+				log.Panicln("T90: Not suported type", ic.Width, ic.Height, pixelDataSize, maskDataSize, ic, bitMap)
+			}
+			pixelP := (*win32api.BYTE)(unsafe.Pointer(&icBytes[pixelDataOffset]))
+			maskP := (*win32api.BYTE)(unsafe.Pointer(&icBytes[maskDataOffset]))
+			icon, err := win32api.CreateIcon(
+				handle,
+				int(ic.Width), int(ic.Height),
+				win32api.BYTE(planes),
+				win32api.BYTE(bitsPixel),
+				maskP, pixelP,
+			)
+			if err != nil {
+				log.Panicln("T246:", err)
+			}
+			return icon
+		}
+	}
+
+	return
 }

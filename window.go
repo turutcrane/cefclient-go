@@ -226,14 +226,16 @@ func RegisterRootClass(hInstance win32api.HINSTANCE, window_class string, backgr
 	}
 	class_regsitered = true
 
-	icon, err := win32api.LoadIcon(hInstance, win32api.MakeIntResource(IdiCefclient)) // w32.IDI_APPLICATION
-	if err != nil {
-		log.Panicln("T105: LoadIcon", err)
-	}
-	iconSm, err := win32api.LoadIcon(hInstance, win32api.MakeIntResource(IdiSmall))
-	if err != nil {
-		log.Panicln("T109: LoadIcon Sm", err)
-	}
+	// icon, err := win32api.LoadIcon(hInstance, win32api.MakeIntResource(IdiCefclient))
+	// if err != nil {
+	// 	log.Panicln("T105: LoadIcon", err)
+	// }
+	icon := loadIconResource(hInstance, ResCefclientIcon)
+	// iconSm, err := win32api.LoadIcon(hInstance, win32api.MakeIntResource(IdiSmall))
+	// if err != nil {
+	// 	log.Panicln("T109: LoadIcon Sm", err)
+	// }
+	iconSm := loadIconResource(hInstance, ResSmallIcon)
 	cursor, err := win32api.LoadCursor(0, win32api.MakeIntResource(win32api.IdcArrow))
 	if err != nil {
 		log.Panicln("T113: LoadCursor", err)
@@ -270,10 +272,11 @@ func RegisterOsrClass(hInstance win32api.HINSTANCE, window_class string, backgro
 	if err != nil {
 		log.Panicln("T113: LoadCursor", err)
 	}
-	iconSm, err := win32api.LoadIcon(hInstance, win32api.MakeIntResource(IdiSmall))
-	if err != nil {
-		log.Panicln("T109: LoadIcon Sm", err)
-	}
+	// iconSm, err := win32api.LoadIcon(hInstance, win32api.MakeIntResource(IdiSmall))
+	// if err != nil {
+	// 	log.Panicln("T109: LoadIcon Sm", err)
+	// }
+	iconSm := loadIconResource(hInstance, ResSmallIcon)
 	wndClass := win32api.Wndclassex{
 		Size:       win32api.UINT(unsafe.Sizeof(win32api.Wndclassex{})),
 		Style:      win32api.CsOwndc,
