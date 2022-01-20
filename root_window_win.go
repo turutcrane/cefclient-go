@@ -1086,7 +1086,8 @@ func (etc *endTraceCallback) OnFileDialogDismissed(
 	selected_accept_filter int,
 	file_paths capi.CStringListT,
 ) {
-	cb := etc.SetCEndTracingCallbackT(nil)
+	etc.UnrefCEndTracingCallbackT()
+	cb := etc.GetCEndTracingCallbackT()
 	if capi.StringListSize(file_paths) > 0 {
 		if ok, file := capi.StringListValue(file_paths, 0); ok {
 			capi.EndTracing(file, cb)
@@ -1136,8 +1137,8 @@ func (ppc *printPdfCallback) OnFileDialogDismissed(
 		settings := capi.NewCPdfPrintSettingsT()
 		settings.SetHeaderFooterEnabled(true)
 		settings.SetHeaderFooterUrl(ppc.browser.GetMainFrame().GetUrl())
-		cb := ppc.SetCPdfPrintCallbackT(nil)
-
+		ppc.UnrefCPdfPrintCallbackT()
+		cb := ppc.GetCPdfPrintCallbackT()
 		if ok, file := capi.StringListValue(file_paths, 0); ok {
 			ppc.browser.GetHost().PrintToPdf(file, settings, cb)
 		}

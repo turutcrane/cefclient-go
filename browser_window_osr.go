@@ -341,7 +341,7 @@ func (bwo *BrowserWindowOsr) Show() {
 		bwo.hidden_ = false
 	}
 
-	bwo.browser_.GetHost().SendFocusEvent(true)
+	bwo.browser_.GetHost().SetFocus(true)
 }
 
 func (bwo *BrowserWindowOsr) Hide() {
@@ -353,7 +353,7 @@ func (bwo *BrowserWindowOsr) Hide() {
 	if bwo.browser_ == nil {
 		return
 	}
-	bwo.browser_.GetHost().SendFocusEvent(false)
+	bwo.browser_.GetHost().SetFocus(false)
 	if !bwo.hidden_ {
 		bwo.browser_.GetHost().WasHidden(true)
 		bwo.hidden_ = true
@@ -905,7 +905,7 @@ func (bwo *BrowserWindowOsr) OnSize() {
 
 func (bwo *BrowserWindowOsr) Setfocus(setFocus bool) {
 	if bwo.browser_ != nil {
-		bwo.browser_.GetHost().SendFocusEvent(setFocus)
+		bwo.browser_.GetHost().SetFocus(setFocus)
 	}
 }
 

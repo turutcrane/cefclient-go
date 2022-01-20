@@ -75,11 +75,11 @@ const (
 )
 
 const (
-	IdsAppTitle                           = C.IDS_APP_TITLE
-	IdsBindingHtml                        = C.IDS_BINDING_HTML
-	IdsDialogsHtml                        = C.IDS_DIALOGS_HTML
-	IdsDraggableHtml                      = C.IDS_DRAGGABLE_HTML
-	IdsDrmHtml                            = C.IDS_DRM_HTML
+	IdsAppTitle      = C.IDS_APP_TITLE
+	IdsBindingHtml   = C.IDS_BINDING_HTML
+	IdsDialogsHtml   = C.IDS_DIALOGS_HTML
+	IdsDraggableHtml = C.IDS_DRAGGABLE_HTML
+	// IdsDrmHtml                            = C.IDS_DRM_HTML
 	IdsLocalstorageHtml                   = C.IDS_LOCALSTORAGE_HTML
 	IdsLogoPng                            = C.IDS_LOGO_PNG
 	IdsMediaRouterHtml                    = C.IDS_MEDIA_ROUTER_HTML
@@ -108,11 +108,10 @@ const (
 )
 
 var resourceMap = map[string]int{
-	"binding.html":                       IdsBindingHtml,
-	"dialogs.html":                       IdsDialogsHtml,
-	"draggable.html":                     IdsDraggableHtml,
-	"drm.html":                           IdsDrmHtml,
-	"extensions/set_page_color/icon.png": IdsExtensionsSetPageColorIconPng,
+	"binding.html":                            IdsBindingHtml,
+	"dialogs.html":                            IdsDialogsHtml,
+	"draggable.html":                          IdsDraggableHtml,
+	"extensions/set_page_color/icon.png":      IdsExtensionsSetPageColorIconPng,
 	"extensions/set_page_color/manifest.json": IdsExtensionsSetPageColorManifestJson,
 	"extensions/set_page_color/popup.html":    IdsExtensionsSetPageColorPopupHtml,
 	"extensions/set_page_color/popup.js":      IdsExtensionsSetPageColorPopupJs,
@@ -161,7 +160,7 @@ func LoadBinaryResource(binaryId int) []byte {
 	if err != nil {
 		log.Panicln("T457:", err)
 	}
-	return C.GoBytes(unsafe.Pointer(p), C.int(size))
+	return C.GoBytes(unsafe.Pointer(uintptr(p)), C.int(size))
 }
 
 type IconDir struct {

@@ -247,10 +247,7 @@ func (bw *BrowserWindowStd) CreateBrowser(
 ) {
 	windowInfo := &capi.CWindowInfoT{}
 	windowInfo.SetParentWindow(capi.ToCWindowHandleT(syscall.Handle(parentHwnd)))
-	windowInfo.SetX(rect.X())
-	windowInfo.SetY(rect.Y())
-	windowInfo.SetWidth(rect.Width())
-	windowInfo.SetHeight(rect.Height())
+	windowInfo.SetBounds(rect)
 	windowInfo.SetStyle(win32api.WsChild | win32api.WsClipchildren | win32api.WsClipsiblings | win32api.WsTabstop | win32api.WsVisible)
 
 	if exStyle, err := win32api.GetWindowLongPtr(parentHwnd, win32api.GwlExstyle); err == nil {
@@ -431,7 +428,7 @@ func (rm *ResourceManager) OnBeforeResourceLoad(
 	browser *capi.CBrowserT,
 	frame *capi.CFrameT,
 	request *capi.CRequestT,
-	callback *capi.CRequestCallbackT,
+	callback *capi.CCallbackT,
 ) (ret capi.CReturnValueT) {
 	requestUrl := request.GetUrl()
 	if u, err := url.Parse(requestUrl); err == nil {
@@ -443,8 +440,10 @@ func (rm *ResourceManager) OnBeforeResourceLoad(
 			filterdPath := urlPathFilter(u)
 			if binaryId, ok := resourceMap[strings.TrimPrefix(filterdPath, kTestDir)]; ok {
 				res := LoadBinaryResource(binaryId)
-				log.Println("T445:", res)
+				// log.Println("T445:", res)
 				rm.AddBytesResource(requestUrl, "text/html", res)
+			} else {
+				log.Println("T449: Not exist resource", filterdPath)
 			}
 		}
 	} else {

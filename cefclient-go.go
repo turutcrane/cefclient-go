@@ -2,11 +2,11 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"runtime"
 	"strings"
-	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -37,9 +37,9 @@ type ClientConfig struct {
 var mainConfig ClientConfig
 
 func init() {
-	// prefix := fmt.Sprintf("[%d] ", os.Getpid())
-	// capi.Logger = log.New(os.Stdout, prefix, log.LstdFlags)
-	// capi.RefCountLogOutput(true)
+	prefix := fmt.Sprintf("[%d] ", os.Getpid())
+	capi.Logger = log.New(os.Stdout, prefix, log.LstdFlags)
+	capi.RefCountLogOutput(true)
 }
 
 type cefProcessType int
@@ -64,15 +64,14 @@ func getCommandLine() *capi.CCommandLineT {
 func main() {
 	// capi.Initialize(i.e. cef_initialize) and some function should be called on
 	// the main application thread to initialize the CEF browser process
-	runtime.LockOSThread()
-	go func() {
-		ppid := os.Getppid()
-		proc, _ := os.FindProcess(ppid)
-		status, _ := proc.Wait()
-		log.Println("T51, Parent:", ppid, status)
-		time.Sleep(5 * time.Second)
-		os.Exit(0)
-	}()
+	// go func() {
+	// 	ppid := os.Getppid()
+	// 	proc, _ := os.FindProcess(ppid)
+	// 	status, _ := proc.Wait()
+	// 	log.Println("T51, Parent:", ppid, status)
+	// 	time.Sleep(5 * time.Second)
+	// 	os.Exit(0)
+	// }()
 
 	// log.Println("T38:", os.Getpid(), os.Args)
 	capi.EnableHighdpiSupport()
@@ -86,9 +85,18 @@ func main() {
 	}
 	log.Println("T87:", procType)
 
+	doCef(procType)
+	runtime.GC()
+
+	capi.Shutdown()
+	capi.Logln("T92: End:")
+}
+
+func doCef(procType cefProcessType) {
 	mainArgs := capi.NewCMainArgsT()
 	cef.CMainArgsTSetInstance(mainArgs)
 
+	runtime.LockOSThread()
 	app := &myApp{}
 	capi.AllocCAppT().Bind(app)
 	defer app.GetCAppT().UnbindAll()
@@ -131,7 +139,7 @@ func main() {
 	}
 
 	cef.Initialize(mainArgs, s, app.GetCAppT())
-	runtime.UnlockOSThread()
+	// runtime.UnlockOSThread()
 
 	browserSettings := capi.NewCBrowserSettingsT()
 	browserSettings.SetBackgroundColor(background_color)
@@ -141,9 +149,8 @@ func main() {
 	windowManager.CreateRootWindow(mainConfig, false, rect, browserSettings)
 
 	capi.RunMessageLoop()
-	defer capi.Shutdown()
-}
 
+}
 type myApp struct {
 	capi.RefToCAppT
 	myBrowserProcessHandler
