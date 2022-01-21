@@ -12,8 +12,9 @@ import (
 )
 
 type BrowserWindowOsr struct {
-	rootWin_             *RootWindowWin
-	browser_             *capi.CBrowserT
+	rootWin_ *RootWindowWin
+	// browser_             *capi.CBrowserT
+	capi.RefToCBrowserT
 	is_closing_          bool
 	hidden_              bool
 	device_scale_factor_ float32
@@ -221,7 +222,7 @@ func (bwo *BrowserWindowOsr) Create(
 }
 
 func (bwo *BrowserWindowOsr) GetCBrowserT() *capi.CBrowserT {
-	return bwo.browser_
+	return bwo.RefToCBrowserT.GetCBrowserT()
 }
 
 func (bwo *BrowserWindowOsr) GetResourceManager() *ResourceManager {
@@ -265,7 +266,7 @@ func (bwo *BrowserWindowOsr) OnBeforeClose(self *capi.CLifeSpanHandlerT, browser
 
 	// render_handler_->SetBrowser(nullptr);
 	// render_handler_.reset();
-	bwo.browser_ = nil
+	bwo.UnrefCBrowserT()
 
 	// Destroy the native window.
 	win32api.DestroyWindow(bwo.osr_hwnd_)
@@ -274,12 +275,13 @@ func (bwo *BrowserWindowOsr) OnBeforeClose(self *capi.CLifeSpanHandlerT, browser
 	bwo.osr_hwnd_ = 0
 
 	bwo.rootWin_.OnBrowserWindowDestroyed()
-	var nullClient *nullCClientT
 
+	bwo.UnrefCBrowserT()
 	bwo.GetCClientT().UnbindAll() // Without UnbindAll call, bwol can not be garbage collected.
 	// GetRenderHandler will be called after this OnBeforeClose.
 	// Unless this Bind, cause crash.
-	bwo.GetCClientT().Bind(nullClient) // nullClient returns dummy render handler
+	// var nullClient *nullCClientT
+	// bwo.GetCClientT().Bind(nullClient) // nullClient returns dummy render handler
 
 	bwo.GetCLifeSpanHandlerT().UnbindAll()
 	bwo.GetCLoadHandlerT().UnbindAll()
@@ -294,8 +296,8 @@ func (bwo *BrowserWindowOsr) OnAfterCreated(
 	self *capi.CLifeSpanHandlerT,
 	browser *capi.CBrowserT,
 ) {
-	if bwo.browser_ == nil {
-		bwo.browser_ = browser
+	if bwo.GetCBrowserT() == nil {
+		bwo.TakeOverCBrowserT(browser)
 	} else {
 		log.Println("T99:", "OnAfterCreated, Not set bwo.browser_")
 	}
@@ -306,7 +308,7 @@ func (bwo *BrowserWindowOsr) OnAfterCreated(
 	// render_handler_->SetBrowser(browser);
 	// }
 	if bwo.osr_hwnd_ != 0 {
-		if bwo.browser_ != nil && bwo.external_begin_frame_enabled {
+		if bwo.GetCBrowserT() != nil && bwo.external_begin_frame_enabled {
 			// Start the BeginFrame timer.
 			bwo.Invalidate()
 		}
@@ -330,18 +332,20 @@ func (bwo *BrowserWindowOsr) Show() {
 		}))
 		return
 	}
-	if bwo.browser_ == nil {
+	if bwo.GetCBrowserT() == nil {
 		return
 	}
 	if bwo.osr_hwnd_ != 0 && !win32api.IsWindowVisible(bwo.osr_hwnd_) {
 		win32api.ShowWindow(bwo.osr_hwnd_, win32api.SwShow)
 	}
+	h := bwo.GetCBrowserT().GetHost()
 	if bwo.hidden_ {
-		bwo.browser_.GetHost().WasHidden(false)
+		h.WasHidden(false)
 		bwo.hidden_ = false
 	}
 
-	bwo.browser_.GetHost().SetFocus(true)
+	h.SetFocus(true)
+	h.Unref()
 }
 
 func (bwo *BrowserWindowOsr) Hide() {
@@ -350,14 +354,16 @@ func (bwo *BrowserWindowOsr) Hide() {
 			bwo.Hide()
 		}))
 	}
-	if bwo.browser_ == nil {
+	if bwo.GetCBrowserT() == nil {
 		return
 	}
-	bwo.browser_.GetHost().SetFocus(false)
+	h := bwo.GetCBrowserT().GetHost()
+	h.SetFocus(false)
 	if !bwo.hidden_ {
-		bwo.browser_.GetHost().WasHidden(true)
+		h.WasHidden(true)
 		bwo.hidden_ = true
 	}
+	h.Unref()
 }
 
 func (bwo *BrowserWindowOsr) DoClose(
@@ -411,9 +417,11 @@ func (bwo *BrowserWindowOsr) SetDeviceScaleFactor(device_scale_factor float32) {
 		return
 	}
 	bwo.device_scale_factor_ = device_scale_factor
-	if bwo.browser_ != nil {
-		bwo.browser_.GetHost().NotifyScreenInfoChanged()
-		bwo.browser_.GetHost().WasResized()
+	if bwo.GetCBrowserT() != nil {
+		h := bwo.GetCBrowserT().GetHost()
+		h.NotifyScreenInfoChanged()
+		h.WasResized()
+		h.Unref()
 	}
 }
 
@@ -464,7 +472,7 @@ func OsrWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPARA
 
 	case win32api.WmErasebkgnd:
 		// Erase the background when the browser does not exist.
-		if bwo.browser_ != nil {
+		if bwo.GetCBrowserT() != nil {
 			return 0
 		}
 
@@ -481,8 +489,10 @@ func (bwo *BrowserWindowOsr) OnWmPaint() {
 	win32api.BeginPaint(bwo.osr_hwnd_, &ps)
 	win32api.EndPaint(bwo.osr_hwnd_, &ps)
 
-	if bwo.browser_ != nil {
-		bwo.browser_.GetHost().Invalidate(capi.PetView)
+	if bwo.GetCBrowserT() != nil {
+		h := bwo.GetCBrowserT().GetHost()
+		h.Invalidate(capi.PetView)
+		h.Unref()
 	}
 }
 
@@ -505,8 +515,9 @@ func (bwo *BrowserWindowOsr) OnMouseEvent(message win32api.MessageId, wParam win
 		return
 	}
 	var browser_host *capi.CBrowserHostT
-	if bwo.browser_ != nil {
-		browser_host = bwo.browser_.GetHost()
+	if bwo.GetCBrowserT() != nil {
+		browser_host = bwo.GetCBrowserT().GetHost()
+		defer browser_host.Unref()
 	}
 	var currentTime win32api.LONG = 0
 	cancelPreviousClick := false
@@ -772,8 +783,8 @@ func (bwo *BrowserWindowOsr) OnPaint(
 	height int,
 ) {
 	// OsrRenderHandlerWin::SetBrowser
-	bwo.browser_ = browser
-	if bwo.browser_ != nil && bwo.external_begin_frame_enabled {
+	bwo.TakeOverCBrowserT(browser)
+	if bwo.GetCBrowserT() != nil && bwo.external_begin_frame_enabled {
 		// Start the BeginFrame timer.
 		bwo.Invalidate()
 	}
@@ -803,7 +814,9 @@ func (bwo *BrowserWindowOsr) OnPaint(
 	bwo.renderer_.OnPaint(browser, ctype, dirtyRects, buffer, width, height)
 	if ctype == capi.PetView && !bwo.renderer_.popup_rect_.IsEmpty() {
 		bwo.painting_popup_ = true
-		bwo.browser_.GetHost().Invalidate(capi.PetPopup)
+		h := bwo.GetCBrowserT().GetHost()
+		h.Invalidate(capi.PetPopup)
+		h.Unref()
 		bwo.painting_popup_ = false
 	}
 	bwo.renderer_.Render()
@@ -861,8 +874,10 @@ func (bwo *BrowserWindowOsr) TriggerBeginFrame(last_time_us uint64, delay_us flo
 		bwo.TriggerBeginFrame(now, delay_us)
 	}), int64(offset/1000))
 
-	if bwo.external_begin_frame_enabled && bwo.browser_ != nil {
-		bwo.browser_.GetHost().SendExternalBeginFrame()
+	if bwo.external_begin_frame_enabled && bwo.GetCBrowserT() != nil {
+		h := bwo.GetCBrowserT().GetHost()
+		h.SendExternalBeginFrame()
+		h.Unref()
 	}
 }
 
@@ -898,14 +913,18 @@ func (bwo *BrowserWindowOsr) OnSize() {
 	bwo.client_rect_.SetWidth(int(rect.Right - rect.Left))
 	bwo.client_rect_.SetHeight(int(rect.Bottom - rect.Top))
 
-	if bwo.browser_ != nil {
-		bwo.browser_.GetHost().WasResized()
+	if bwo.GetCBrowserT() != nil {
+		h := bwo.GetCBrowserT().GetHost()
+		h.WasResized()
+		h.Unref()
 	}
 }
 
 func (bwo *BrowserWindowOsr) Setfocus(setFocus bool) {
-	if bwo.browser_ != nil {
-		bwo.browser_.GetHost().SetFocus(setFocus)
+	if bwo.GetCBrowserT() != nil {
+		h := bwo.GetCBrowserT().GetHost()
+		h.SetFocus(setFocus)
+		h.Unref()
 	}
 }
 
@@ -913,13 +932,15 @@ func (bwo *BrowserWindowOsr) OnCaptureLost() {
 	if bwo.mouse_rotation_ {
 		return
 	}
-	if bwo.browser_ != nil {
-		bwo.browser_.GetHost().SendCaptureLostEvent()
+	if bwo.GetCBrowserT() != nil {
+		h := bwo.GetCBrowserT().GetHost()
+		h.SendCaptureLostEvent()
+		h.Unref()
 	}
 }
 
 func (bwo *BrowserWindowOsr) OnKeyEvent(message win32api.MessageId, wParam win32api.WPARAM, lParam win32api.LPARAM) {
-	if bwo.browser_ == nil {
+	if bwo.GetCBrowserT() == nil {
 		return
 	}
 	log.Printf("T896: %d, %x, %x\n", message, wParam, lParam)
@@ -961,8 +982,9 @@ func (bwo *BrowserWindowOsr) OnKeyEvent(message win32api.MessageId, wParam win32
 		}
 	}
 
-	bwo.browser_.GetHost().SendKeyEvent(&event)
-
+	h := bwo.GetCBrowserT().GetHost()
+	h.SendKeyEvent(&event)
+	h.Unref()
 }
 
 func (origin *BrowserWindowOsr) OnBeforePopup(
@@ -1003,15 +1025,18 @@ func (bwo *BrowserWindowOsr) ShowPopup(parentHwnd win32api.HWND, rect capi.CRect
 	bwo.Create(parentHwnd, rect)
 
 	// render_handler_->SetBrowser(browser_);
-	if bwo.browser_ == nil {
+	if bwo.GetCBrowserT() == nil {
 		log.Panicln("T979:")
 	}
-	if bwo.browser_ != nil && bwo.external_begin_frame_enabled {
+	if bwo.GetCBrowserT() != nil && bwo.external_begin_frame_enabled {
 		// Start the BeginFrame timer.
 		bwo.Invalidate()
 	}
 
-	bwo.browser_.GetHost().WasResized()
+	h := bwo.GetCBrowserT().GetHost()
+	h.WasResized()
+	h.Unref()
+
 	bwo.Show()
 }
 

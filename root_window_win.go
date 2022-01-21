@@ -1037,7 +1037,9 @@ func BeginTracing() {
 
 type endTraceCallback struct {
 	capi.RefToCEndTracingCallbackT
-	browser *capi.CBrowserT
+	// browser *capi.CBrowserT
+	capi.RefToCBrowserT
+	capi.RefToCRunFileDialogCallbackT
 }
 
 func init() {
@@ -1054,7 +1056,14 @@ func (etc *endTraceCallback) OnEndTracingComplete(
 	self *capi.CEndTracingCallbackT,
 	tracing_file string,
 ) {
-	frame := etc.browser.GetMainFrame()
+	defer func() {
+		etc.UnrefCBrowserT()
+		etc.GetCEndTracingCallbackT().UnbindAll()
+	}()
+
+	frame := etc.GetCBrowserT().GetMainFrame()
+	defer frame.Unref()
+
 	url := frame.GetUrl()
 	frame.ExecuteJavaScript(fmt.Sprintf("alert('File \"%s\" saved successfully');", tracing_file), url, 0)
 }
@@ -1066,7 +1075,9 @@ func EndTracing(browser *capi.CBrowserT) {
 		}))
 		return
 	}
-	etc := &endTraceCallback{browser: browser}
+	etc := &endTraceCallback{}
+	etc.NewRefCBrowserT(browser)
+
 	capi.AllocCEndTracingCallbackT().Bind(etc)
 	callback := capi.AllocCRunFileDialogCallbackT().Bind(etc)
 	path := GetDownloadPath("trace.txt")
@@ -1086,7 +1097,9 @@ func (etc *endTraceCallback) OnFileDialogDismissed(
 	selected_accept_filter int,
 	file_paths capi.CStringListT,
 ) {
-	etc.UnrefCEndTracingCallbackT()
+	// etc.UnrefCEndTracingCallbackT()
+	defer etc.GetCRunFileDialogCallbackT().UnbindAll()
+
 	cb := etc.GetCEndTracingCallbackT()
 	if capi.StringListSize(file_paths) > 0 {
 		if ok, file := capi.StringListValue(file_paths, 0); ok {
@@ -1098,7 +1111,8 @@ func (etc *endTraceCallback) OnFileDialogDismissed(
 }
 
 type printPdfCallback struct {
-	browser *capi.CBrowserT
+	// browser *capi.CBrowserT
+	capi.RefToCBrowserT
 	capi.RefToCPdfPrintCallbackT
 }
 
@@ -1117,7 +1131,14 @@ func (ppc *printPdfCallback) OnPdfPrintFinished(
 	path string,
 	ok bool,
 ) {
-	frame := ppc.browser.GetMainFrame()
+	defer func() {
+		ppc.UnrefCBrowserT()
+		ppc.GetCPdfPrintCallbackT().UnbindAll()
+	}()
+
+	frame := ppc.GetCBrowserT().GetMainFrame()
+	defer frame.Unref()
+
 	url := frame.GetUrl()
 	var alertStmt string
 	if ok {
@@ -1136,14 +1157,21 @@ func (ppc *printPdfCallback) OnFileDialogDismissed(
 	if capi.StringListSize(file_paths) > 0 {
 		settings := capi.NewCPdfPrintSettingsT()
 		settings.SetHeaderFooterEnabled(true)
-		settings.SetHeaderFooterUrl(ppc.browser.GetMainFrame().GetUrl())
+
+		frame := ppc.GetCBrowserT().GetMainFrame()
+		defer frame.Unref()
+
+		settings.SetHeaderFooterUrl(frame.GetUrl())
 		ppc.UnrefCPdfPrintCallbackT()
 		cb := ppc.GetCPdfPrintCallbackT()
 		if ok, file := capi.StringListValue(file_paths, 0); ok {
-			ppc.browser.GetHost().PrintToPdf(file, settings, cb)
+			h := ppc.GetCBrowserT().GetHost()
+			h.PrintToPdf(file, settings, cb)
+			h.Unref()
 		}
 	}
 }
+
 func PrintToPdf(browser *capi.CBrowserT) {
 	if !capi.CurrentlyOn(capi.TidUi) {
 		cef.PostTask(capi.TidUi, cef.TaskFunc(func() {
@@ -1151,7 +1179,8 @@ func PrintToPdf(browser *capi.CBrowserT) {
 		}))
 		return
 	}
-	ppc := &printPdfCallback{browser: browser}
+	ppc := &printPdfCallback{}
+	ppc.NewRefCBrowserT(browser)
 	capi.AllocCPdfPrintCallbackT().Bind(ppc)
 	callback := capi.AllocCRunFileDialogCallbackT().Bind(ppc)
 	accept_filters := cef.NewStringList()

@@ -16,7 +16,8 @@ import (
 
 type BrowserWindowStd struct {
 	rootWin_        *RootWindowWin
-	browser_        *capi.CBrowserT
+	// browser_        *capi.CBrowserT
+	capi.RefToCBrowserT
 	is_closing_     bool
 	resourceManager *ResourceManager
 
@@ -113,8 +114,8 @@ func (bw *BrowserWindowStd) OnAfterCreated(
 ) {
 
 	// ClientHandler::NotifyBrowserCreated
-	if bw.browser_ == nil {
-		bw.browser_ = browser
+	if bw.GetCBrowserT() == nil {
+		bw.TakeOverCBrowserT(browser) 
 	} else {
 		log.Println("T71:", "OnAfterCreated, not set bw.browser_")
 	}
@@ -216,7 +217,7 @@ func OnBeforePopup(
 }
 
 func (bw *BrowserWindowStd) GetCBrowserT() *capi.CBrowserT {
-	return bw.browser_
+	return bw.RefToCBrowserT.GetCBrowserT()
 }
 
 func (bw *BrowserWindowStd) IsOsr() bool {
@@ -229,6 +230,7 @@ func (bw *BrowserWindowStd) GetResourceManager() *ResourceManager {
 
 func (bw *BrowserWindowStd) OnBrowserClosed(browser *capi.CBrowserT) {
 	bw.rootWin_.OnBrowserWindowDestroyed()
+	bw.UnrefCBrowserT()
 	bw.GetCClientT().UnbindAll()
 	bw.GetCLifeSpanHandlerT().UnbindAll()
 	bw.GetCLoadHandlerT().UnbindAll()
@@ -267,8 +269,10 @@ func (bw *BrowserWindowStd) CreateBrowser(
 }
 
 func (bw *BrowserWindowStd) SetFocus(focus bool) {
-	if bw.browser_ != nil {
-		bw.browser_.GetHost().SetFocus(focus)
+	if bw.GetCBrowserT() != nil {
+		h := bw.GetCBrowserT().GetHost()
+		h.SetFocus(focus)
+		h.Unref()
 	}
 }
 
