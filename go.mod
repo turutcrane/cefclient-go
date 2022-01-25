@@ -9,7 +9,3 @@ require (
 	github.com/turutcrane/win32api v0.0.0-20210228064332-e07b0e8ffb4c
 	golang.org/x/sys v0.0.0-20210309074719-68d13333faf2 // indirect
 )
-
-replace github.com/turutcrane/cefingo => ../cefingo
-
-replace github.com/turutcrane/win32api => ../win32api

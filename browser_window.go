@@ -115,7 +115,7 @@ func (bw *BrowserWindowStd) OnAfterCreated(
 
 	// ClientHandler::NotifyBrowserCreated
 	if bw.GetCBrowserT() == nil {
-		bw.TakeOverCBrowserT(browser) 
+		bw.NewRefCBrowserT(browser)
 	} else {
 		log.Println("T71:", "OnAfterCreated, not set bw.browser_")
 	}

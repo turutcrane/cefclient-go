@@ -297,7 +297,7 @@ func (bwo *BrowserWindowOsr) OnAfterCreated(
 	browser *capi.CBrowserT,
 ) {
 	if bwo.GetCBrowserT() == nil {
-		bwo.TakeOverCBrowserT(browser)
+		bwo.NewRefCBrowserT(browser)
 	} else {
 		log.Println("T99:", "OnAfterCreated, Not set bwo.browser_")
 	}
@@ -783,7 +783,7 @@ func (bwo *BrowserWindowOsr) OnPaint(
 	height int,
 ) {
 	// OsrRenderHandlerWin::SetBrowser
-	bwo.TakeOverCBrowserT(browser)
+	bwo.NewRefCBrowserT(browser)
 	if bwo.GetCBrowserT() != nil && bwo.external_begin_frame_enabled {
 		// Start the BeginFrame timer.
 		bwo.Invalidate()
