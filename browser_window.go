@@ -294,8 +294,10 @@ func (bw *BrowserWindowStd) Show() {
 
 func GetWindowHandle(browser *capi.CBrowserT) win32api.HWND {
 	if browser != nil {
-		h := browser.GetHost().GetWindowHandle()
-		return win32api.HWND(capi.ToHandle(h))
+		h := browser.GetHost()
+		defer h.Unref()
+		handle := h.GetWindowHandle()
+		return win32api.HWND(capi.ToHandle(handle))
 	}
 	return 0
 }
@@ -402,10 +404,14 @@ func browserWindowOnQuery(bw BrowserWindow, browser *capi.CBrowserT, frame *capi
 		val := strings.TrimPrefix(request_str, kPromptFPS)
 		if fps, err := strconv.Atoi(val); err == nil {
 			if fps <= 0 {
-				browser.GetHost().SetWindowlessFrameRate(mainConfig.windowless_frame_rate)
+				h := browser.GetHost()
+				defer h.Unref()
+				h.SetWindowlessFrameRate(mainConfig.windowless_frame_rate)
 			} else {
 				log.Println("T403:", fps)
-				browser.GetHost().SetWindowlessFrameRate(fps)
+				h := browser.GetHost()
+				defer h.Unref()
+				h.SetWindowlessFrameRate(fps)
 			}
 		}
 		handled = true

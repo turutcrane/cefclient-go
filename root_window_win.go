@@ -216,8 +216,10 @@ func RootWndProc(hWnd win32api.HWND, message win32api.UINT, wParam win32api.WPAR
 
 		// Accessibility readers will send an OBJID_CLIENT message.
 		if win32api.DWORD(0xffffffff&win32api.ObjidClient) == obj_id {
-			if self.GetBrowser() != nil && self.GetBrowser().GetHost() != nil {
-				self.GetBrowser().GetHost().SetAccessibilityState(capi.StateEnabled)
+			h := self.GetBrowser().GetHost()
+			defer h.Unref()
+			if self.GetBrowser() != nil && h != nil {
+				h.SetAccessibilityState(capi.StateEnabled)
 			}
 		}
 
@@ -573,7 +575,9 @@ func (self *RootWindowWin) OnSize(minimized bool) {
 func (self *RootWindowWin) OnMove() {
 	browser := self.GetBrowser()
 	if browser != nil {
-		browser.GetHost().NotifyMoveOrResizeStarted()
+		h := browser.GetHost()
+		defer h.Unref()
+		h.NotifyMoveOrResizeStarted()
 	}
 }
 
@@ -607,7 +611,9 @@ func (self *RootWindowWin) OnClose() bool {
 	if self.browser_window_ != nil && !self.browser_window_.IsClosing() {
 		browser := self.GetBrowser()
 		if browser != nil {
-			browser.GetHost().CloseBrowser(false)
+			h := browser.GetHost()
+			defer h.Unref()
+			h.CloseBrowser(false)
 			return true
 		}
 	}
@@ -635,10 +641,11 @@ func (self *RootWindowWin) OnDestroyed() {
 
 func (self *RootWindowWin) OnFindEvent() {
 	browser := self.GetBrowser()
-
+	host := browser.GetHost()
+	defer host.Unref()
 	if (self.find_state_.Flags & win32api.FrDialogterm) != 0 {
 		if browser != nil {
-			browser.GetHost().StopFinding(true)
+			host.StopFinding(true)
 			self.find_what_last_ = ""
 			self.find_next_ = false
 		}
@@ -648,13 +655,13 @@ func (self *RootWindowWin) OnFindEvent() {
 		find_what := syscall.UTF16ToString(self.find_buff_[:])
 		if match_case != self.find_match_case_last_ || find_what != self.find_what_last_ {
 			if find_what != "" {
-				browser.GetHost().StopFinding(true)
+				host.StopFinding(true)
 				self.find_next_ = false
 			}
 			self.find_match_case_last_ = match_case
 			self.find_what_last_ = find_what
 		}
-		browser.GetHost().Find(
+		host.Find(
 			0,
 			find_what,
 			(self.find_state_.Flags&win32api.FrDown) != 0,
@@ -822,7 +829,9 @@ func onTestCommand(rw *RootWindowWin, id win32api.UINT) {
 	case IdTestsTracingEnd:
 		EndTracing(rw.browser_window_.GetCBrowserT())
 	case IdTestsPrint:
-		browser.GetHost().Print()
+		h := browser.GetHost()
+		h.Unref()
+		h.Print()
 	case IdTestsPrintToPdf:
 		PrintToPdf(rw.browser_window_.GetCBrowserT())
 	case IdTestsMuteAudio:
@@ -845,7 +854,9 @@ func runGetTextTest(browser BrowserWindow) {
 func runNewWindowTest(initial_url string, browser BrowserWindow) {
 	browserSettings := capi.NewCBrowserSettingsT()
 	rect := win32api.Rect{}
-	with_osr := browser.GetCBrowserT().GetHost().IsWindowRenderingDisabled()
+	h := browser.GetCBrowserT().GetHost()
+	defer h.Unref()
+	with_osr := h.IsWindowRenderingDisabled()
 
 	config := mainConfig
 	config.main_url = initial_url
@@ -860,6 +871,8 @@ func runPopupWindowTest(browser BrowserWindow) {
 
 func runRequestTest(browser BrowserWindow) {
 	frame := browser.GetCBrowserT().GetMainFrame()
+	defer frame.Unref()
+
 	url := frame.GetUrl()
 	if !strings.HasPrefix(url, kTestOrigin) {
 		msg := "Please first navigate to a http://tests/ URL. " +
@@ -884,7 +897,7 @@ func runRequestTest(browser BrowserWindow) {
 	capi.StringMultimapAppend(h.CefObject(), "X-My-Header", "My Header Value")
 	request.SetHeaderMap(h.CefObject())
 
-	browser.GetCBrowserT().GetMainFrame().LoadRequest(request)
+	frame.LoadRequest(request)
 }
 
 func runPluginInfo(browser BrowserWindow) {
@@ -1187,7 +1200,10 @@ func PrintToPdf(browser *capi.CBrowserT) {
 	accept_filters.Append(".pdf")
 	path := GetDownloadPath("output.pdf")
 	log.Println("T1153:", path)
-	browser.GetHost().RunFileDialog(
+
+	h := browser.GetHost()
+	defer h.Unref()
+	h.RunFileDialog(
 		capi.FileDialogSave|capi.FileDialogOverwritepromptFlag,
 		"", // title
 		path,
@@ -1199,6 +1215,7 @@ func PrintToPdf(browser *capi.CBrowserT) {
 
 func MuteAudio(browser *capi.CBrowserT, mute bool) {
 	host := browser.GetHost()
+	defer host.Unref()
 	host.SetAudioMuted(mute)
 }
 
