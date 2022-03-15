@@ -8,8 +8,8 @@ import (
 )
 
 type myRenderProcessHandler struct {
-	capi.RefToCRenderProcessHandlerT
-	router *router.RendererMessageRouter
+	renderProcessHandler *capi.CRenderProcessHandlerT
+	router               *router.RendererMessageRouter
 }
 
 func init() {

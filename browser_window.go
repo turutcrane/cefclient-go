@@ -16,16 +16,15 @@ import (
 
 type BrowserWindowStd struct {
 	rootWin_        *RootWindowWin
-	// browser_        *capi.CBrowserT
-	capi.RefToCBrowserT
+	browser         *capi.CBrowserT
 	is_closing_     bool
 	resourceManager *ResourceManager
 
-	capi.RefToCClientT
-	capi.RefToCLifeSpanHandlerT
-	capi.RefToCLoadHandlerT
-	capi.RefToCRequestHandlerT
-	capi.RefToCDisplayHandlerT
+	client          *capi.CClientT
+	lifeSpanHandler *capi.CLifeSpanHandlerT
+	loadHandler     *capi.CLoadHandlerT
+	requestHandler  *capi.CRequestHandlerT
+	displayHandler  *capi.CDisplayHandlerT
 }
 
 func NewBrowserWindowStd(rootWindow *RootWindowWin) *BrowserWindowStd {
@@ -33,15 +32,16 @@ func NewBrowserWindowStd(rootWindow *RootWindowWin) *BrowserWindowStd {
 	bw.rootWin_ = rootWindow
 	bw.resourceManager = NewResourceManager()
 
-	capi.AllocCLifeSpanHandlerT().Bind(bw)
-	capi.AllocCClientT().Bind(bw)
-	capi.AllocCLoadHandlerT().Bind(bw)
+	bw.lifeSpanHandler = capi.NewCLifeSpanHandlerT(bw)
+	bw.client = capi.NewCClientT(bw)
+	bw.loadHandler = capi.NewCLoadHandlerT(bw)
 
-	capi.AllocCRequestHandlerT().Bind(bw)
-	capi.AllocCResourceRequestHandlerT().Bind(&bw.resourceManager)
+	bw.requestHandler = capi.NewCRequestHandlerT(bw)
+	bw.resourceManager.resourceRequestHandler = capi.NewCResourceRequestHandlerT(bw.resourceManager)
 
-	capi.AllocCDisplayHandlerT().Bind(bw)
-	capi.AllocCResponseFilterT().Bind(bw)
+	bw.displayHandler = capi.NewCDisplayHandlerT(bw)
+	// bw.responseFilter =  capi.NewCResponseFilterT(bw)
+	capi.Logln("T44:", bw.client)
 
 	return bw
 }
@@ -49,7 +49,7 @@ func NewBrowserWindowStd(rootWindow *RootWindowWin) *BrowserWindowStd {
 func init() {
 	var bw *BrowserWindowStd
 	// capi.CClientT
-	var _ capi.CClientTAccessor = bw
+	// var _ capi.CClientTAccessor = bw
 	var _ capi.GetLifeSpanHandlerHandler = bw
 	var _ capi.CClientTGetLoadHandlerHandler = bw
 	var _ capi.GetRequestHandlerHandler = bw
@@ -72,6 +72,10 @@ func init() {
 
 	// capi.CDisplayHandlerT
 	var _ capi.OnAddressChangeHandler = bw
+
+	// capi.CResponseFilterT
+	// var _ capi.InitFilterHandler = bw
+	// var _ capi.FilterHandler = bw
 }
 
 func (bw *BrowserWindowStd) OnLoadingStateChange(
@@ -88,19 +92,20 @@ func (bw *BrowserWindowStd) OnLoadingStateChange(
 }
 
 func (bw *BrowserWindowStd) GetLifeSpanHandler(*capi.CClientT) *capi.CLifeSpanHandlerT {
-	return bw.GetCLifeSpanHandlerT()
+	capi.Logln("T94:", bw.lifeSpanHandler)
+	return bw.lifeSpanHandler
 }
 
 func (bw *BrowserWindowStd) GetLoadHandler(*capi.CClientT) *capi.CLoadHandlerT {
-	return bw.GetCLoadHandlerT()
+	return bw.loadHandler
 }
 
 func (bw *BrowserWindowStd) GetRequestHandler(*capi.CClientT) *capi.CRequestHandlerT {
-	return bw.GetCRequestHandlerT()
+	return bw.requestHandler
 }
 
 func (bw *BrowserWindowStd) GetDisplayHandler(*capi.CClientT) *capi.CDisplayHandlerT {
-	return bw.GetCDisplayHandlerT()
+	return bw.displayHandler
 }
 
 func (bw *BrowserWindowStd) OnBeforeClose(self *capi.CLifeSpanHandlerT, browser *capi.CBrowserT) {
@@ -115,11 +120,13 @@ func (bw *BrowserWindowStd) OnAfterCreated(
 
 	// ClientHandler::NotifyBrowserCreated
 	if bw.GetCBrowserT() == nil {
-		bw.NewRefCBrowserT(browser)
+		capi.Logln("T123:", bw.GetCBrowserT(), browser)
+		bw.browser = browser.NewRef()
+		capi.Logln("T125:", bw.GetCBrowserT(), browser)
 	} else {
 		log.Println("T71:", "OnAfterCreated, not set bw.browser_")
 	}
-	bw.rootWin_.OnBrowserCreated(browser)
+	bw.rootWin_.OnBrowserCreated(bw.browser)
 }
 
 func (bw *BrowserWindowStd) DoClose(
@@ -154,6 +161,10 @@ func (origin *BrowserWindowStd) OnBeforePopup(
 	no_javascript_accessOut bool,
 ) {
 	return OnBeforePopup(origin, target_url, popupFeatures, windowInfo, settings, no_javascript_access)
+}
+
+func (origin *BrowserWindowStd) GetCClientT() *capi.CClientT {
+	return origin.client
 }
 
 func OnBeforePopup(
@@ -193,6 +204,7 @@ func OnBeforePopup(
 
 	ret = false
 	clientOut = rw.browser_window_.GetCClientT()
+	capi.Logf("T196: 0x%llx\n", unsafe.Pointer(clientOut))
 	windowInfoOut = windowInfo
 
 	temp_hwnd_ := windowManager.GetTempWindow()
@@ -217,7 +229,7 @@ func OnBeforePopup(
 }
 
 func (bw *BrowserWindowStd) GetCBrowserT() *capi.CBrowserT {
-	return bw.RefToCBrowserT.GetCBrowserT()
+	return bw.browser
 }
 
 func (bw *BrowserWindowStd) IsOsr() bool {
@@ -225,18 +237,19 @@ func (bw *BrowserWindowStd) IsOsr() bool {
 }
 
 func (bw *BrowserWindowStd) GetResourceManager() *ResourceManager {
+	capi.Logln("T240:", bw.resourceManager)
 	return bw.resourceManager
 }
 
 func (bw *BrowserWindowStd) OnBrowserClosed(browser *capi.CBrowserT) {
 	bw.rootWin_.OnBrowserWindowDestroyed()
-	bw.UnrefCBrowserT()
-	bw.GetCClientT().UnbindAll()
-	bw.GetCLifeSpanHandlerT().UnbindAll()
-	bw.GetCLoadHandlerT().UnbindAll()
-	bw.GetCRequestHandlerT().UnbindAll()
-	bw.GetCDisplayHandlerT().UnbindAll()
-	bw.resourceManager.GetCResourceRequestHandlerT().UnbindAll()
+	bw.browser.Unref()
+	bw.client.Unref()                                 // .UnbindAll()
+	bw.lifeSpanHandler.Unref()                        // .UnbindAll()
+	bw.loadHandler.Unref()                            // .UnbindAll()
+	bw.requestHandler.Unref()                         // .UnbindAll()
+	bw.displayHandler.Unref()                         // .UnbindAll()
+	bw.resourceManager.resourceRequestHandler.Unref() // .UnbindAll()
 }
 
 func (bw *BrowserWindowStd) CreateBrowser(
@@ -257,7 +270,7 @@ func (bw *BrowserWindowStd) CreateBrowser(
 			windowInfo.SetExStyle(windowInfo.ExStyle() | win32api.WsExNoactivate)
 		}
 	}
-
+	capi.Logln("T269:")
 	capi.BrowserHostCreateBrowser(
 		windowInfo,
 		bw.GetCClientT(),
@@ -329,7 +342,8 @@ func (bw *BrowserWindowStd) GetResourceRequestHandler(
 	is_download int,
 	request_initiator string,
 ) (*capi.CResourceRequestHandlerT, bool) {
-	return bw.resourceManager.GetCResourceRequestHandlerT(), false
+	capi.Logln("T345:", bw.resourceManager.resourceRequestHandler)
+	return bw.resourceManager.resourceRequestHandler, false
 }
 
 func (bw *BrowserWindowStd) OnOpenUrlfromTab(
@@ -408,7 +422,7 @@ func browserWindowOnQuery(bw BrowserWindow, browser *capi.CBrowserT, frame *capi
 				defer h.Unref()
 				h.SetWindowlessFrameRate(mainConfig.windowless_frame_rate)
 			} else {
-				log.Println("T403:", fps)
+				// capi.Logln("T403:", fps)
 				h := browser.GetHost()
 				defer h.Unref()
 				h.SetWindowlessFrameRate(fps)
@@ -446,14 +460,14 @@ func (rm *ResourceManager) OnBeforeResourceLoad(
 			stream, header_map := GetDumpResponse(request)
 			rm.AddStreamResource(requestUrl, stream, header_map)
 		} else {
-			log.Println("T442:", u.Path)
+			capi.Logln("T442:", u.Path)
 			filterdPath := urlPathFilter(u)
 			if binaryId, ok := resourceMap[strings.TrimPrefix(filterdPath, kTestDir)]; ok {
 				res := LoadBinaryResource(binaryId)
 				// log.Println("T445:", res)
 				rm.AddBytesResource(requestUrl, "text/html", res)
 			} else {
-				log.Println("T449: Not exist resource", filterdPath)
+				capi.Logln("T449: Not exist resource", filterdPath)
 			}
 		}
 	} else {
@@ -496,8 +510,8 @@ func (rm *ResourceManager) GetResourceHandler(
 }
 
 type ResourceManager struct {
-	rh map[string]*capi.CResourceHandlerT
-	capi.RefToCResourceRequestHandlerT
+	rh                     map[string]*capi.CResourceHandlerT
+	resourceRequestHandler *capi.CResourceRequestHandlerT
 }
 
 func init() {
@@ -511,13 +525,13 @@ func NewResourceManager() (rm *ResourceManager) {
 	rm = &ResourceManager{
 		rh: map[string]*capi.CResourceHandlerT{},
 	}
-	capi.AllocCResourceRequestHandlerT().Bind(rm)
+	rm.resourceRequestHandler = capi.NewCResourceRequestHandlerT(rm)
 	return rm
 }
 
 func (rm *ResourceManager) AddBytesResource(url, mime string, content []byte) {
 	rh := &StringResourceHandler{url, content, mime, 0}
-	cefHandler := capi.AllocCResourceHandlerT().Bind(rh)
+	cefHandler := capi.NewCResourceHandlerT(rh)
 	rm.rh[url] = cefHandler
 }
 
@@ -650,7 +664,7 @@ func DumpRequestContents(request *capi.CRequestT) (dump string) {
 
 func (rm *ResourceManager) AddStreamResource(url string, stream *capi.CStreamReaderT, headerMap *cef.StringMultimap) {
 	rh := &StreamResourceHandler{url, stream, headerMap, "text/html", 200, "OK"}
-	cefHandler := capi.AllocCResourceHandlerT().Bind(rh)
+	cefHandler := capi.NewCResourceHandlerT(rh)
 	rm.rh[url] = cefHandler
 }
 
@@ -724,7 +738,8 @@ func GetSource(bw BrowserWindow) {
 			browser.GetMainFrame().LoadUrl(url)
 		},
 	}
-	sv := capi.AllocCStringVisitorT().Bind(&mySv)
+	sv := capi.NewCStringVisitorT(&mySv)
+	defer sv.Unref()
 	browser.GetMainFrame().GetSource(sv)
 }
 
@@ -754,7 +769,8 @@ func GetText(bw BrowserWindow) {
 			browser.GetMainFrame().LoadUrl(url)
 		},
 	}
-	sv := capi.AllocCStringVisitorT().Bind(&mySv)
+	sv := capi.NewCStringVisitorT(&mySv)
+	defer sv.Unref()
 	browser.GetMainFrame().GetText(sv)
 }
 
@@ -815,7 +831,7 @@ func GetPlugInInfoVisitor(browser *capi.CBrowserT, rm *ResourceManager) *capi.CW
 	visitor.browser = browser
 	visitor.rm = rm
 
-	return capi.AllocCWebPluginInfoVisitorT().Bind(visitor)
+	return capi.NewCWebPluginInfoVisitorT(visitor).Pass()
 }
 
 func (bw *BrowserWindowStd) ShowPopup(hwnd_ win32api.HWND, rect capi.CRectT) {

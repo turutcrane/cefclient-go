@@ -40,9 +40,11 @@ func init() {
 	prefix := fmt.Sprintf("[%d] ", os.Getpid())
 	capi.Logger = log.New(os.Stdout, prefix, log.LstdFlags)
 	capi.RefCountLogOutput(true)
+	// capi.RefCountLogTrace(true)
 }
 
 type cefProcessType int
+
 const (
 	OtherProcces cefProcessType = iota
 	BrowserProcess
@@ -51,9 +53,9 @@ const (
 
 func getCommandLine() *capi.CCommandLineT {
 	commandLine := capi.CommandLineCreate()
-	line := (*[1<<30]uint16)(unsafe.Pointer(win32api.GetCommandLine()))[:]
+	line := (*[1 << 30]uint16)(unsafe.Pointer(win32api.GetCommandLine()))[:]
 	lineLen := 0
-	for ; line[lineLen] != 0; lineLen++{
+	for ; line[lineLen] != 0; lineLen++ {
 	}
 	runes := utf16.Decode(line[0:lineLen:lineLen])
 	commandLine.InitFromString(string(runes))
@@ -98,19 +100,19 @@ func doCef(procType cefProcessType) {
 
 	runtime.LockOSThread()
 	app := &myApp{}
-	capi.AllocCAppT().Bind(app)
-	defer app.GetCAppT().UnbindAll()
+	app.app = capi.NewCAppT(app)
+	defer app.app.Unref() // .UnbindAll()
 
 	switch procType {
 	case BrowserProcess:
-		capi.AllocCBrowserProcessHandlerT().Bind(app)
-		defer app.GetCBrowserProcessHandlerT().UnbindAll()
+		// app.browserProcessHandler = capi.NewCBrowserProcessHandlerT(app)
+		// defer app.browserProcessHandler.Unref() // .UnbindAll()
 	case RenderProcess:
-		capi.AllocCRenderProcessHandlerT().Bind(app)
-		defer app.GetCRenderProcessHandlerT().UnbindAll()
+		app.renderProcessHandler = capi.NewCRenderProcessHandlerT(app)
+		defer app.renderProcessHandler.Unref() // .UnbindAll()
 	}
 
-	cef.ExecuteProcess(mainArgs, app.GetCAppT())
+	cef.ExecuteProcess(mainArgs, app.app)
 
 	// browser_process_handler.initial_url = flag.String("url", "https://www.golang.org/", "URL")
 	flag.StringVar(&mainConfig.main_url, "url", "https://www.golang.org/", "URL")
@@ -138,7 +140,7 @@ func doCef(procType cefProcessType) {
 		s.SetWindowlessRenderingEnabled(true)
 	}
 
-	cef.Initialize(mainArgs, s, app.GetCAppT())
+	cef.Initialize(mainArgs, s, app.app)
 	// runtime.UnlockOSThread()
 
 	browserSettings := capi.NewCBrowserSettingsT()
@@ -151,8 +153,9 @@ func doCef(procType cefProcessType) {
 	capi.RunMessageLoop()
 
 }
+
 type myApp struct {
-	capi.RefToCAppT
+	app *capi.CAppT
 	myBrowserProcessHandler
 
 	myRenderProcessHandler
@@ -172,11 +175,11 @@ func init() {
 }
 
 func (app *myApp) GetBrowserProcessHandler(self *capi.CAppT) *capi.CBrowserProcessHandlerT {
-	return app.GetCBrowserProcessHandlerT()
+	return app.browserProcessHandler
 }
 
 func (app *myApp) GetRenderProcessHandler(self *capi.CAppT) *capi.CRenderProcessHandlerT {
-	return app.GetCRenderProcessHandlerT()
+	return app.renderProcessHandler
 }
 
 func parseColor(color string) capi.CColorT {
@@ -198,7 +201,7 @@ func parseColor(color string) capi.CColorT {
 type myBrowserProcessHandler struct {
 	// this reference forms an UNgabagecollectable circular reference
 	// To GC, call myBrowserProcessHandler.SetCBrowserProcessHandlerT(nil)
-	capi.RefToCBrowserProcessHandlerT
+	browserProcessHandler *capi.CBrowserProcessHandlerT
 
 	// capi.RefToCClientT
 	// initial_url *string

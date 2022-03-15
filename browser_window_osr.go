@@ -12,9 +12,8 @@ import (
 )
 
 type BrowserWindowOsr struct {
-	rootWin_ *RootWindowWin
-	// browser_             *capi.CBrowserT
-	capi.RefToCBrowserT
+	rootWin_             *RootWindowWin
+	browser              *capi.CBrowserT
 	is_closing_          bool
 	hidden_              bool
 	device_scale_factor_ float32
@@ -24,8 +23,7 @@ type BrowserWindowOsr struct {
 	hrc_                 win32api.HGLRC
 	painting_popup_      bool
 	background_color     capi.CColorT
-
-	client_rect_ capi.CRectT
+	client_rect_         capi.CRectT
 
 	resourceManager *ResourceManager
 
@@ -45,12 +43,12 @@ type BrowserWindowOsr struct {
 	windowless_frame_rate        int
 	begin_frame_pending_         bool
 
-	capi.RefToCClientT
-	capi.RefToCLifeSpanHandlerT
-	capi.RefToCLoadHandlerT
-	capi.RefToCRequestHandlerT
-	capi.RefToCDisplayHandlerT
-	capi.RefToCRenderHandlerT
+	client          *capi.CClientT
+	lifeSpanHandler *capi.CLifeSpanHandlerT
+	loadHandler     *capi.CLoadHandlerT
+	requestHandler  *capi.CRequestHandlerT
+	displayHandler  *capi.CDisplayHandlerT
+	renderHandler   *capi.CRenderHandlerT
 }
 
 func init() {
@@ -94,8 +92,8 @@ func init() {
 type nullCClientT struct{}
 
 func (*nullCClientT) GetRenderHandler(self *capi.CClientT) (ret *capi.CRenderHandlerT) {
-	rh := capi.AllocCRenderHandlerT() // has no hander routine
-	return rh
+	rh := capi.NewCRenderHandlerT(nil) // has no hander routine
+	return rh.Pass()
 }
 
 func init() {
@@ -120,17 +118,17 @@ func NewBrowserWindowOsr(
 
 	bwo.renderer_ = NewOsrRenderer(show_update_rect, bwo.background_color)
 
-	capi.AllocCLifeSpanHandlerT().Bind(bwo)
-	capi.AllocCClientT().Bind(bwo)
-	capi.AllocCLoadHandlerT().Bind(bwo)
+	bwo.lifeSpanHandler = capi.NewCLifeSpanHandlerT(bwo)
+	bwo.client = capi.NewCClientT(bwo)
+	bwo.loadHandler = capi.NewCLoadHandlerT(bwo)
 
-	capi.AllocCRequestHandlerT().Bind(bwo)
-	capi.AllocCResourceRequestHandlerT().Bind(&bwo.resourceManager)
+	bwo.requestHandler = capi.NewCRequestHandlerT(bwo)
+	bwo.resourceManager.resourceRequestHandler = capi.NewCResourceRequestHandlerT(bwo.resourceManager)
 
-	capi.AllocCDisplayHandlerT().Bind(bwo)
-	capi.AllocCResponseFilterT().Bind(bwo)
+	bwo.displayHandler = capi.NewCDisplayHandlerT(bwo)
+	// bwo.responsefilter = api.NewCResponseFilterT(bwo)
 
-	capi.AllocCRenderHandlerT().Bind(bwo)
+	bwo.renderHandler = capi.NewCRenderHandlerT(bwo)
 
 	return bwo
 }
@@ -222,7 +220,11 @@ func (bwo *BrowserWindowOsr) Create(
 }
 
 func (bwo *BrowserWindowOsr) GetCBrowserT() *capi.CBrowserT {
-	return bwo.RefToCBrowserT.GetCBrowserT()
+	return bwo.browser
+}
+
+func (bwo *BrowserWindowOsr) GetCClientT() *capi.CClientT {
+	return bwo.client
 }
 
 func (bwo *BrowserWindowOsr) GetResourceManager() *ResourceManager {
@@ -242,23 +244,23 @@ func (bw *BrowserWindowOsr) OnLoadingStateChange(
 }
 
 func (bwo *BrowserWindowOsr) GetLifeSpanHandler(*capi.CClientT) *capi.CLifeSpanHandlerT {
-	return bwo.GetCLifeSpanHandlerT()
+	return bwo.lifeSpanHandler
 }
 
 func (bwo *BrowserWindowOsr) GetLoadHandler(*capi.CClientT) *capi.CLoadHandlerT {
-	return bwo.GetCLoadHandlerT()
+	return bwo.loadHandler
 }
 
 func (bwo *BrowserWindowOsr) GetRequestHandler(*capi.CClientT) *capi.CRequestHandlerT {
-	return bwo.GetCRequestHandlerT()
+	return bwo.requestHandler
 }
 
 func (bwo *BrowserWindowOsr) GetDisplayHandler(*capi.CClientT) *capi.CDisplayHandlerT {
-	return bwo.GetCDisplayHandlerT()
+	return bwo.displayHandler
 }
 
 func (bwo *BrowserWindowOsr) GetRenderHandler(*capi.CClientT) *capi.CRenderHandlerT {
-	handler := bwo.GetCRenderHandlerT()
+	handler := bwo.renderHandler
 	return handler
 }
 
@@ -266,7 +268,7 @@ func (bwo *BrowserWindowOsr) OnBeforeClose(self *capi.CLifeSpanHandlerT, browser
 
 	// render_handler_->SetBrowser(nullptr);
 	// render_handler_.reset();
-	bwo.UnrefCBrowserT()
+	bwo.browser.Unref()
 
 	// Destroy the native window.
 	win32api.DestroyWindow(bwo.osr_hwnd_)
@@ -276,19 +278,18 @@ func (bwo *BrowserWindowOsr) OnBeforeClose(self *capi.CLifeSpanHandlerT, browser
 
 	bwo.rootWin_.OnBrowserWindowDestroyed()
 
-	bwo.UnrefCBrowserT()
-	bwo.GetCClientT().UnbindAll() // Without UnbindAll call, bwol can not be garbage collected.
+	bwo.client.Unref() // .UnbindAll() // Without UnbindAll call, bwol can not be garbage collected.
 	// GetRenderHandler will be called after this OnBeforeClose.
 	// Unless this Bind, cause crash.
 	// var nullClient *nullCClientT
 	// bwo.GetCClientT().Bind(nullClient) // nullClient returns dummy render handler
 
-	bwo.GetCLifeSpanHandlerT().UnbindAll()
-	bwo.GetCLoadHandlerT().UnbindAll()
-	bwo.GetCRequestHandlerT().UnbindAll()
-	bwo.GetCDisplayHandlerT().UnbindAll()
-	bwo.GetCRenderHandlerT().UnbindAll()
-	bwo.resourceManager.GetCResourceRequestHandlerT().UnbindAll()
+	bwo.lifeSpanHandler.Unref()                        // .UnbindAll()
+	bwo.loadHandler.Unref()                            // .UnbindAll()
+	bwo.requestHandler.Unref()                         // .UnbindAll()
+	bwo.displayHandler.Unref()                         // .UnbindAll()
+	bwo.renderHandler.Unref()                          // .UnbindAll()
+	bwo.resourceManager.resourceRequestHandler.Unref() // .UnbindAll()
 
 }
 
@@ -297,7 +298,7 @@ func (bwo *BrowserWindowOsr) OnAfterCreated(
 	browser *capi.CBrowserT,
 ) {
 	if bwo.GetCBrowserT() == nil {
-		bwo.NewRefCBrowserT(browser)
+		bwo.browser = browser.NewRef()
 	} else {
 		log.Println("T99:", "OnAfterCreated, Not set bwo.browser_")
 	}
@@ -385,7 +386,7 @@ func (bwo *BrowserWindowOsr) GetResourceRequestHandler(
 	is_download int,
 	request_initiator string,
 ) (*capi.CResourceRequestHandlerT, bool) {
-	return bwo.resourceManager.GetCResourceRequestHandlerT(), false
+	return bwo.resourceManager.resourceRequestHandler, false
 }
 
 func (bw *BrowserWindowOsr) OnAddressChange(
@@ -783,7 +784,10 @@ func (bwo *BrowserWindowOsr) OnPaint(
 	height int,
 ) {
 	// OsrRenderHandlerWin::SetBrowser
-	bwo.NewRefCBrowserT(browser)
+	if bwo.browser != nil {
+		bwo.browser.Unref()
+	}
+	bwo.browser = browser.NewRef()
 	if bwo.GetCBrowserT() != nil && bwo.external_begin_frame_enabled {
 		// Start the BeginFrame timer.
 		bwo.Invalidate()
@@ -1065,12 +1069,10 @@ func (bwo *BrowserWindowOsr) OnProcessMessageReceived(
 	source_process capi.CProcessIdT,
 	message *capi.CProcessMessageT,
 ) (ret bool) {
-	log.Println("T1037:")
 	return router.BrowserOnProcessMessageReceived(bwo, browser, frame, routerMessagePrefix, message)
 }
 
 func (bwo *BrowserWindowOsr) OnQuery(browser *capi.CBrowserT, frame *capi.CFrameT, request_str string, persistent bool, queryId router.BrowserQueryId, callback router.Callback) (handled bool) {
-	log.Println("T1042:")
 	return browserWindowOnQuery(bwo, browser, frame, request_str, persistent, callback)
 }
 

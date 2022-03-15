@@ -108,6 +108,7 @@ func (rw *RootWindowWin) Init(
 			mainConfig.background_color,
 		)
 	} else {
+		capi.Logln("T111:")
 		rw.browser_window_ = NewBrowserWindowStd(rw)
 	}
 
@@ -442,6 +443,7 @@ func (self *RootWindowWin) OnCreate(cs *win32api.Createstruct) {
 	if self.is_popup_ {
 		self.browser_window_.ShowPopup(self.hwnd_, r)
 	} else {
+		capi.Logln("T446:", self.browser_window_, self.browser_window_.GetCClientT())
 		self.browser_window_.CreateBrowser(self.initial_url, self.hwnd_, r, self.browser_settings_, nil, nil) // delegate が PDF extension を許可している)
 	}
 }
@@ -830,7 +832,7 @@ func onTestCommand(rw *RootWindowWin, id win32api.UINT) {
 		EndTracing(rw.browser_window_.GetCBrowserT())
 	case IdTestsPrint:
 		h := browser.GetHost()
-		h.Unref()
+		defer h.Unref()
 		h.Print()
 	case IdTestsPrintToPdf:
 		PrintToPdf(rw.browser_window_.GetCBrowserT())
@@ -1049,10 +1051,9 @@ func BeginTracing() {
 }
 
 type endTraceCallback struct {
-	capi.RefToCEndTracingCallbackT
-	// browser *capi.CBrowserT
-	capi.RefToCBrowserT
-	capi.RefToCRunFileDialogCallbackT
+	endTracingCallback    *capi.CEndTracingCallbackT
+	browser               *capi.CBrowserT
+	runFileDialogCallback *capi.CRunFileDialogCallbackT
 }
 
 func init() {
@@ -1069,13 +1070,11 @@ func (etc *endTraceCallback) OnEndTracingComplete(
 	self *capi.CEndTracingCallbackT,
 	tracing_file string,
 ) {
-	defer func() {
-		etc.UnrefCBrowserT()
-		etc.GetCEndTracingCallbackT().UnbindAll()
-	}()
-
-	frame := etc.GetCBrowserT().GetMainFrame()
+	frame := etc.browser.GetMainFrame()
 	defer frame.Unref()
+
+	etc.browser.Unref() // unref before Popup alert dialog box 
+	etc.endTracingCallback.Unref() // .UnbindAll()
 
 	url := frame.GetUrl()
 	frame.ExecuteJavaScript(fmt.Sprintf("alert('File \"%s\" saved successfully');", tracing_file), url, 0)
@@ -1089,10 +1088,11 @@ func EndTracing(browser *capi.CBrowserT) {
 		return
 	}
 	etc := &endTraceCallback{}
-	etc.NewRefCBrowserT(browser)
+	etc.browser = browser.NewRef()
 
-	capi.AllocCEndTracingCallbackT().Bind(etc)
-	callback := capi.AllocCRunFileDialogCallbackT().Bind(etc)
+	etc.endTracingCallback = capi.NewCEndTracingCallbackT(etc)
+	callback := capi.NewCRunFileDialogCallbackT(etc)
+	defer callback.Unref()
 	path := GetDownloadPath("trace.txt")
 	accept_filters := cef.NewStringList()
 	browser.GetHost().RunFileDialog(
@@ -1111,9 +1111,9 @@ func (etc *endTraceCallback) OnFileDialogDismissed(
 	file_paths capi.CStringListT,
 ) {
 	// etc.UnrefCEndTracingCallbackT()
-	defer etc.GetCRunFileDialogCallbackT().UnbindAll()
+	defer etc.runFileDialogCallback.Unref() // .UnbindAll()
 
-	cb := etc.GetCEndTracingCallbackT()
+	cb := etc.endTracingCallback
 	if capi.StringListSize(file_paths) > 0 {
 		if ok, file := capi.StringListValue(file_paths, 0); ok {
 			capi.EndTracing(file, cb)
@@ -1124,9 +1124,8 @@ func (etc *endTraceCallback) OnFileDialogDismissed(
 }
 
 type printPdfCallback struct {
-	// browser *capi.CBrowserT
-	capi.RefToCBrowserT
-	capi.RefToCPdfPrintCallbackT
+	browser          *capi.CBrowserT
+	pdfPrintCallback *capi.CPdfPrintCallbackT
 }
 
 func init() {
@@ -1145,11 +1144,11 @@ func (ppc *printPdfCallback) OnPdfPrintFinished(
 	ok bool,
 ) {
 	defer func() {
-		ppc.UnrefCBrowserT()
-		ppc.GetCPdfPrintCallbackT().UnbindAll()
+		ppc.browser.Unref()
+		ppc.pdfPrintCallback.Unref() // UnbindAll()
 	}()
 
-	frame := ppc.GetCBrowserT().GetMainFrame()
+	frame := ppc.browser.GetMainFrame()
 	defer frame.Unref()
 
 	url := frame.GetUrl()
@@ -1171,16 +1170,16 @@ func (ppc *printPdfCallback) OnFileDialogDismissed(
 		settings := capi.NewCPdfPrintSettingsT()
 		settings.SetHeaderFooterEnabled(true)
 
-		frame := ppc.GetCBrowserT().GetMainFrame()
+		frame := ppc.browser.GetMainFrame()
 		defer frame.Unref()
 
 		settings.SetHeaderFooterUrl(frame.GetUrl())
-		ppc.UnrefCPdfPrintCallbackT()
-		cb := ppc.GetCPdfPrintCallbackT()
+		defer ppc.pdfPrintCallback.Unref()
+		cb := ppc.pdfPrintCallback
 		if ok, file := capi.StringListValue(file_paths, 0); ok {
-			h := ppc.GetCBrowserT().GetHost()
+			h := ppc.browser.GetHost()
+			defer h.Unref()
 			h.PrintToPdf(file, settings, cb)
-			h.Unref()
 		}
 	}
 }
@@ -1193,9 +1192,10 @@ func PrintToPdf(browser *capi.CBrowserT) {
 		return
 	}
 	ppc := &printPdfCallback{}
-	ppc.NewRefCBrowserT(browser)
-	capi.AllocCPdfPrintCallbackT().Bind(ppc)
-	callback := capi.AllocCRunFileDialogCallbackT().Bind(ppc)
+	ppc.browser = browser.NewRef()
+	ppc.pdfPrintCallback = capi.NewCPdfPrintCallbackT(ppc)
+	callback := capi.NewCRunFileDialogCallbackT(ppc)
+	defer callback.Unref()
 	accept_filters := cef.NewStringList()
 	accept_filters.Append(".pdf")
 	path := GetDownloadPath("output.pdf")
