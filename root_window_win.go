@@ -664,7 +664,6 @@ func (self *RootWindowWin) OnFindEvent() {
 			self.find_what_last_ = find_what
 		}
 		host.Find(
-			0,
 			find_what,
 			(self.find_state_.Flags&win32api.FrDown) != 0,
 			match_case, self.find_next_,

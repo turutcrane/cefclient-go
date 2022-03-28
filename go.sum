@@ -9,6 +9,8 @@ github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+
 github.com/stretchr/testify v1.5.1/go.mod h1:5W2xD1RspED5o8YsWQXVCued0rvSQ+mT+I5cxcmMvtA=
 github.com/turutcrane/cefingo v0.5.0 h1:vqLH9P9Fi4tOoR3wq5Zs+am07gAOVy7TFqhDJOiJPlA=
 github.com/turutcrane/cefingo v0.5.0/go.mod h1:yLCwhOB1uaHTSsj/CigVkykuYwmwk3+b2N008MygwbY=
+github.com/turutcrane/cefingo v0.5.1 h1:H3x0WhMbRQiPMEn8drfaBxlmzoHXaEiseTfCgdOylz8=
+github.com/turutcrane/cefingo v0.5.1/go.mod h1:yLCwhOB1uaHTSsj/CigVkykuYwmwk3+b2N008MygwbY=
 github.com/turutcrane/win32api v0.0.0-20201121062900-30ba51003370/go.mod h1:0M5CGcICREX8XFggo8rfqtqaScbCghwJuGIldKFTpUk=
 github.com/turutcrane/win32api v0.0.1 h1:FI2dHGk6Gd6t2Acb7/xqe/zKFGPIMIxVotKP4Kncu1A=
 github.com/turutcrane/win32api v0.0.1/go.mod h1:0M5CGcICREX8XFggo8rfqtqaScbCghwJuGIldKFTpUk=
