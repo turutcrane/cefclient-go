@@ -160,7 +160,7 @@ func (origin *BrowserWindowStd) OnBeforePopup(
 	extra_info *capi.CDictionaryValueT,
 	no_javascript_accessOut bool,
 ) {
-	return OnBeforePopup(origin, target_url, popupFeatures, windowInfo, settings, no_javascript_access)
+	return OnBeforePopup(origin, target_url, popupFeatures, windowInfo, settings, no_javascript_access, client)
 }
 
 func (origin *BrowserWindowStd) GetCClientT() *capi.CClientT {
@@ -174,6 +174,7 @@ func OnBeforePopup(
 	windowInfo capi.CWindowInfoT,
 	settings capi.CBrowserSettingsT,
 	no_javascript_access bool,
+	clientIn *capi.CClientT,
 ) (
 	ret bool,
 	windowInfoOut capi.CWindowInfoT,
@@ -204,7 +205,10 @@ func OnBeforePopup(
 
 	ret = false
 	clientOut = rw.browser_window_.GetCClientT()
-	capi.Logf("T196: 0x%llx\n", unsafe.Pointer(clientOut))
+	capi.Logf("T196: %p\n", unsafe.Pointer(clientOut))
+	capi.CheckClients("T209: in", clientIn)
+	capi.CheckClients("T210: out", clientOut)
+	
 	windowInfoOut = windowInfo
 
 	temp_hwnd_ := windowManager.GetTempWindow()
@@ -795,44 +799,44 @@ type myPluginInfoVisitor struct {
 	rm      *ResourceManager
 }
 
-func init() {
-	var _ capi.CWebPluginInfoVisitorTVisitHandler = (*myPluginInfoVisitor)(nil)
-}
+// func init() {
+// 	var _ capi.CWebPluginInfoVisitorTVisitHandler = (*myPluginInfoVisitor)(nil)
+// }
 
-func (v *myPluginInfoVisitor) Visit(
-	self *capi.CWebPluginInfoVisitorT,
-	info *capi.CWebPluginInfoT,
-	count int,
-	total int,
-) bool {
-	name := info.GetName()
-	desc := info.GetDescription()
-	ver := info.GetVersion()
-	path := info.GetPath()
+// func (v *myPluginInfoVisitor) Visit(
+// 	self *capi.CWebPluginInfoVisitorT,
+// 	info *capi.CWebPluginInfoT,
+// 	count int,
+// 	total int,
+// ) bool {
+// 	name := info.GetName()
+// 	desc := info.GetDescription()
+// 	ver := info.GetVersion()
+// 	path := info.GetPath()
 
-	v.html += "\n<br/><br/>Name: " + name +
-		"\n<br/>Description: " + desc +
-		"\n<br/>Version: " + ver +
-		"\n<br/>Path: " + path
-	if count+1 >= total {
-		v.html += "\n</body></html>"
-		url := kTestOrigin + kTestPluginInfoPage
-		v.rm.AddBytesResource(url, "text/html", []byte(v.html))
-		v.browser.GetMainFrame().LoadUrl(url)
-	}
-	return true
-}
+// 	v.html += "\n<br/><br/>Name: " + name +
+// 		"\n<br/>Description: " + desc +
+// 		"\n<br/>Version: " + ver +
+// 		"\n<br/>Path: " + path
+// 	if count+1 >= total {
+// 		v.html += "\n</body></html>"
+// 		url := kTestOrigin + kTestPluginInfoPage
+// 		v.rm.AddBytesResource(url, "text/html", []byte(v.html))
+// 		v.browser.GetMainFrame().LoadUrl(url)
+// 	}
+// 	return true
+// }
 
-func GetPlugInInfoVisitor(browser *capi.CBrowserT, rm *ResourceManager) *capi.CWebPluginInfoVisitorT {
-	visitor := &myPluginInfoVisitor{}
-	visitor.html = "<html><head><title>Plugin Info Test</title></head>" +
-		"<body bgcolor=\"white\">" +
-		"\n<b>Installed plugins:</b>"
-	visitor.browser = browser
-	visitor.rm = rm
+// func GetPlugInInfoVisitor(browser *capi.CBrowserT, rm *ResourceManager) *capi.CWebPluginInfoVisitorT {
+// 	visitor := &myPluginInfoVisitor{}
+// 	visitor.html = "<html><head><title>Plugin Info Test</title></head>" +
+// 		"<body bgcolor=\"white\">" +
+// 		"\n<b>Installed plugins:</b>"
+// 	visitor.browser = browser
+// 	visitor.rm = rm
 
-	return capi.NewCWebPluginInfoVisitorT(visitor).Pass()
-}
+// 	return capi.NewCWebPluginInfoVisitorT(visitor).Pass()
+// }
 
 func (bw *BrowserWindowStd) ShowPopup(hwnd_ win32api.HWND, rect capi.CRectT) {
 	bwHwnd := GetWindowHandle(bw.GetCBrowserT())

@@ -1012,7 +1012,7 @@ func (origin *BrowserWindowOsr) OnBeforePopup(
 	extra_info *capi.CDictionaryValueT,
 	no_javascript_accessOut bool,
 ) {
-	return OnBeforePopup(origin, target_url, popupFeatures, windowInfo, settings, no_javascript_access)
+	return OnBeforePopup(origin, target_url, popupFeatures, windowInfo, settings, no_javascript_access, client)
 }
 
 func (bwo *BrowserWindowOsr) IsOsr() bool {

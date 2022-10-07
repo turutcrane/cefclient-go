@@ -27,7 +27,7 @@ const (
 	IdTestsGetsource    = C.ID_TESTS_GETSOURCE
 	IdTestsGettext      = C.ID_TESTS_GETTEXT
 	IdTestsOtherTests   = C.ID_TESTS_OTHER_TESTS
-	IdTestsPluginInfo   = C.ID_TESTS_PLUGIN_INFO
+	// IdTestsPluginInfo   = C.ID_TESTS_PLUGIN_INFO
 	IdTestsWindowNew    = C.ID_TESTS_WINDOW_NEW
 	IdTestsWindowPopup  = C.ID_TESTS_WINDOW_POPUP
 	IdTestsPrint        = C.ID_TESTS_PRINT

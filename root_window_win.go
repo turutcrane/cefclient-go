@@ -809,8 +809,8 @@ func onTestCommand(rw *RootWindowWin, id win32api.UINT) {
 	case IdTestsRequest:
 		runRequestTest(rw.browser_window_)
 
-	case IdTestsPluginInfo:
-		runPluginInfo(rw.browser_window_)
+	// case IdTestsPluginInfo:
+	// 	runPluginInfo(rw.browser_window_)
 
 	case IdTestsZoomIn:
 		ModifyZoom(rw.browser_window_.GetCBrowserT(), 0.5)
@@ -901,10 +901,10 @@ func runRequestTest(browser BrowserWindow) {
 	frame.LoadRequest(request)
 }
 
-func runPluginInfo(browser BrowserWindow) {
-	visitor := GetPlugInInfoVisitor(browser.GetCBrowserT(), browser.GetResourceManager())
-	capi.VisitWebPluginInfo(visitor)
-}
+// func runPluginInfo(browser BrowserWindow) {
+// 	visitor := GetPlugInInfoVisitor(browser.GetCBrowserT(), browser.GetResourceManager())
+// 	capi.VisitWebPluginInfo(visitor)
+// }
 
 func PromptFPS(browser *capi.CBrowserT) {
 	if !capi.CurrentlyOn(capi.TidUi) {
@@ -1095,18 +1095,18 @@ func EndTracing(browser *capi.CBrowserT) {
 	path := GetDownloadPath("trace.txt")
 	accept_filters := cef.NewStringList()
 	browser.GetHost().RunFileDialog(
-		capi.FileDialogSave|capi.FileDialogOverwritepromptFlag,
+		capi.FileDialogSave, // |capi.FileDialogOverwritepromptFlag,
 		"", // title
 		path,
 		accept_filters.CefObject(),
-		0,
+		// 0,
 		callback,
 	)
 }
 
 func (etc *endTraceCallback) OnFileDialogDismissed(
 	self *capi.CRunFileDialogCallbackT,
-	selected_accept_filter int,
+	// selected_accept_filter int,
 	file_paths capi.CStringListT,
 ) {
 	// etc.UnrefCEndTracingCallbackT()
@@ -1162,7 +1162,7 @@ func (ppc *printPdfCallback) OnPdfPrintFinished(
 
 func (ppc *printPdfCallback) OnFileDialogDismissed(
 	self *capi.CRunFileDialogCallbackT,
-	selected_accept_filter int,
+	// selected_accept_filter int,
 	file_paths capi.CStringListT,
 ) {
 	if capi.StringListSize(file_paths) > 0 {
@@ -1203,11 +1203,11 @@ func PrintToPdf(browser *capi.CBrowserT) {
 	h := browser.GetHost()
 	defer h.Unref()
 	h.RunFileDialog(
-		capi.FileDialogSave|capi.FileDialogOverwritepromptFlag,
+		capi.FileDialogSave, // |capi.FileDialogOverwritepromptFlag,
 		"", // title
 		path,
 		accept_filters.CefObject(),
-		0,
+		// 0,
 		callback,
 	)
 }
