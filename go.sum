@@ -13,6 +13,8 @@ github.com/turutcrane/cefingo v0.5.1 h1:H3x0WhMbRQiPMEn8drfaBxlmzoHXaEiseTfCgdOy
 github.com/turutcrane/cefingo v0.5.1/go.mod h1:yLCwhOB1uaHTSsj/CigVkykuYwmwk3+b2N008MygwbY=
 github.com/turutcrane/cefingo v0.5.6 h1:aNJFFqCQRvFUGlycfR9j3UsEnY7BCzAuc2HEXjczqU0=
 github.com/turutcrane/cefingo v0.5.6/go.mod h1:yLCwhOB1uaHTSsj/CigVkykuYwmwk3+b2N008MygwbY=
+github.com/turutcrane/cefingo v0.5.7 h1:9u9nNMk1LXnR+eSfvggNmnPQltcRsmisgOx6SArFvKw=
+github.com/turutcrane/cefingo v0.5.7/go.mod h1:yLCwhOB1uaHTSsj/CigVkykuYwmwk3+b2N008MygwbY=
 github.com/turutcrane/win32api v0.0.0-20201121062900-30ba51003370/go.mod h1:0M5CGcICREX8XFggo8rfqtqaScbCghwJuGIldKFTpUk=
 github.com/turutcrane/win32api v0.0.1 h1:FI2dHGk6Gd6t2Acb7/xqe/zKFGPIMIxVotKP4Kncu1A=
 github.com/turutcrane/win32api v0.0.1/go.mod h1:0M5CGcICREX8XFggo8rfqtqaScbCghwJuGIldKFTpUk=
